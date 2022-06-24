@@ -59,7 +59,7 @@ async fn pump_ffmpeg_stderr(reader: impl AsyncBufRead) -> anyhow::Result<()> {
     pin!(reader);
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
-        info!("ffmpeg(err): {}", line)
+        trace!("ffmpeg(err): {}", line)
     }
     Ok(())
 }
