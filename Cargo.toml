@@ -1,0 +1,29 @@
+[package]
+name = "yasd"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+teloxide = { version = "0.9.2", features = ["macros", "auto-send"] }
+
+reqwest = { version = "0.11.11", features = ["rustls-tls-webpki-roots"] }
+
+async-trait = "0.1.56"
+futures = "0.3.21"
+bytes = "1.1.0"
+tokio = { version = "1.19.2", features = ["sync", "tracing", "rt", "macros", "fs", "io-util"] }
+tokio-util = { version = "0.7.3", features = ["compat", "io-util", "codec"] }
+tokio-stream = "0.1.9"
+
+ffmpeg-next = "5.0.3"
+
+unix-named-pipe = "0.2.0"
+tempdir = "0.3.7"
+async-process = "1.4.0"
+which = "4.2.5"
+
+tracing = "0.1.35"
+tracing-subscriber = "0.3.11"
+anyhow = "1.0.58"
