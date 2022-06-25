@@ -147,8 +147,10 @@ pub async fn remux(
         .arg("-c")
         .arg("copy")
         // mux as streamable mp4
+        .arg("-movflags")
+        .arg("empty_moov+frag_keyframe+default_base_moof")
         .arg("-f")
-        .arg("ismv")
+        .arg("mp4")
         // write to pipe
         .arg(&muxed_out_pipe_name)
         .spawn()

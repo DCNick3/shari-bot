@@ -1,8 +1,7 @@
 use crate::dispatcher::DownloadDispatcher;
-use crate::StreamExt;
-use anyhow::{anyhow, Context, Result};
-use futures::TryStreamExt;
-use std::io::ErrorKind;
+use crate::downloader::Downloader;
+use anyhow::{anyhow, Result};
+use futures::{FutureExt, TryStreamExt};
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::{
@@ -10,19 +9,23 @@ use teloxide::{
     dispatching::UpdateFilterExt,
     dptree,
     error_handlers::LoggingErrorHandler,
+    payloads::EditMessageTextSetters,
     payloads::SendMessageSetters,
     payloads::SendVideoSetters,
-    requests::{Requester, ResponseResult},
+    requests::Requester,
+    types::ParseMode,
     types::{
         ChatId, ChatKind, InputFile, MediaKind, Message, MessageCommon, MessageEntityKind,
         MessageKind, Update,
     },
+    utils::markdown,
     Bot,
 };
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio::{pin, select};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 const SUPERUSER: ChatId = ChatId(379529027);
 
@@ -72,6 +75,24 @@ pub async fn run_bot(bot: AutoSend<Bot>, dispatcher: Arc<DownloadDispatcher>) {
         .await;
 }
 
+async fn upload_video(
+    bot: AutoSend<Bot>,
+    downloader: Arc<dyn Downloader>,
+    url: String,
+    chat_id: ChatId,
+    message_id: i32,
+    notifier: Notifier,
+) -> anyhow::Result<()> {
+    let stream = downloader.download(url, notifier).await?;
+    let stream = stream.into_async_read().compat();
+
+    bot.send_video(chat_id, InputFile::read(stream).file_name("video.mp4"))
+        .reply_to_message_id(message_id)
+        .await?;
+
+    Ok(())
+}
+
 async fn handler(
     message: Message,
     bot: AutoSend<Bot>,
@@ -85,6 +106,13 @@ async fn handler(
 
     if chat.id != SUPERUSER {
         info!("Ignoring message from non-superuser ({:?})", chat);
+
+        bot.send_message(
+            chat.id,
+            "sowwy i am not awwowed to spek with pepel i donbt now (yet) (/ω＼)",
+        )
+        .reply_to_message_id(message.id)
+        .await?;
         return Ok(());
     }
 
@@ -108,27 +136,79 @@ async fn handler(
                 debug!("Found downloader: {:?}", downloader);
 
                 let status_message = bot
-                    .send_message(chat.id, "Working  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
+                    .send_message(chat.id, "Wowking~   (ﾉ>ω<)ﾉ")
                     .reply_to_message_id(message.id)
                     .await?;
 
                 let (notifier, notification_rx) = Notifier::make();
 
-                let stream = downloader.download(url.to_string(), notifier).await?;
-                let stream = stream.into_async_read().compat();
-
-                bot.send_video(chat.id, InputFile::read(stream))
-                    .reply_to_message_id(message.id)
-                    .await?;
-
-                tokio::time::sleep(Duration::from_secs(1)).await;
-
-                bot.edit_message_text(
+                let upload_fut = upload_video(
+                    bot.clone(),
+                    downloader,
+                    url.to_string(),
                     chat.id,
-                    status_message.id,
-                    "Working more!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆",
+                    message.id,
+                    notifier,
                 )
-                .await?;
+                .fuse();
+
+                let mut interval = tokio::time::interval(Duration::from_secs(1));
+
+                pin!(upload_fut);
+
+                let magic_parts = [":｡", "･:*", ":･ﾟ", "’★,｡", "･:*", ":･ﾟ", "’☆"];
+                let mut magic_idx: usize = 1;
+
+                let r = loop {
+                    select! {
+                        _ = interval.tick() => {
+                            let magic = &magic_parts[..magic_idx];
+                            let magic = magic.join("");
+                            let message = format!("Wowking~   (ﾉ>ω<)ﾉ {}", magic);
+
+                            bot.edit_message_text(
+                                chat.id,
+                                status_message.id,
+                                message,
+                            )
+                            .await?;
+
+                            magic_idx += 1;
+                            if magic_idx == magic_parts.len() {
+                                magic_idx = 0;
+                            }
+                        },
+                        r = &mut upload_fut => {
+                            break r;
+                        }
+                    }
+                };
+
+                match r {
+                    Ok(_) => {
+                        info!("Successfully sent video!");
+                        bot.edit_message_text(
+                            chat.id,
+                            status_message.id,
+                            "did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆",
+                        )
+                        .await?;
+                    }
+                    Err(e) => {
+                        error!("Error occurred while sending the video: {:?}", e);
+                        bot.edit_message_text(
+                            chat.id,
+                            status_message.id,
+                            format!(
+                                "{}\n\n{}",
+                                markdown::escape("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･."),
+                                markdown::code_block(&markdown::escape_code(&format!("{:?}", e)))
+                            ),
+                        )
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .await?;
+                    }
+                }
             } else {
                 bot.send_message(chat.id, "I donbt no ho to doload tis url((999")
                     .reply_to_message_id(message.id)
@@ -137,7 +217,7 @@ async fn handler(
         } else {
             bot.send_message(
                 chat.id,
-                "Send me something with a URL in it and I'll try to figure it out UwU",
+                "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
             )
             .reply_to_message_id(message.id)
             .await?;
