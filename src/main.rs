@@ -2,6 +2,7 @@ use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::youtube::YoutubeDownloader;
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
+use std::time::Duration;
 use teloxide::adaptors::AutoSend;
 use teloxide::requests::{Requester, RequesterExt};
 use teloxide::types::{
@@ -75,7 +76,11 @@ async fn main() -> anyhow::Result<()> {
     let dispatcher = DownloadDispatcher::new(vec![Arc::new(YoutubeDownloader {})]);
     let dispatcher = Arc::new(dispatcher);
 
-    let bot = Bot::from_env().auto_send();
+    let client = teloxide::net::default_reqwest_settings()
+        .timeout(Duration::from_secs(120)) // TODO: this is a "feature" of teloxide unfortunately =(
+        // See https://github.com/teloxide/teloxide/issues/529
+        .build()?;
+    let bot = Bot::from_env_with_client(client).auto_send();
     bot::run_bot(bot, dispatcher).await;
 
     // remux_example().await?;
