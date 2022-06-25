@@ -1,19 +1,27 @@
 use crate::dispatcher::DownloadDispatcher;
+use crate::StreamExt;
 use anyhow::{anyhow, Context, Result};
+use futures::TryStreamExt;
+use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
-use teloxide::adaptors::AutoSend;
-use teloxide::dispatching::UpdateFilterExt;
-use teloxide::error_handlers::LoggingErrorHandler;
-use teloxide::payloads::SendMessageSetters;
-use teloxide::requests::{Requester, ResponseResult};
-use teloxide::types::{
-    ChatId, ChatKind, InputFile, MediaKind, Message, MessageCommon, MessageEntityKind, MessageKind,
-    Update,
+use teloxide::{
+    adaptors::AutoSend,
+    dispatching::UpdateFilterExt,
+    dptree,
+    error_handlers::LoggingErrorHandler,
+    payloads::SendMessageSetters,
+    payloads::SendVideoSetters,
+    requests::{Requester, ResponseResult},
+    types::{
+        ChatId, ChatKind, InputFile, MediaKind, Message, MessageCommon, MessageEntityKind,
+        MessageKind, Update,
+    },
+    Bot,
 };
-use teloxide::{dptree, Bot};
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, info, warn};
 
 const SUPERUSER: ChatId = ChatId(379529027);
@@ -68,7 +76,7 @@ async fn handler(
     message: Message,
     bot: AutoSend<Bot>,
     dispatcher: Arc<DownloadDispatcher>,
-) -> ResponseResult<()> {
+) -> anyhow::Result<()> {
     let chat = message.chat;
     debug!("Got message from {:?}", chat.id);
     if !matches!(chat.kind, ChatKind::Private(_)) {
@@ -106,6 +114,13 @@ async fn handler(
 
                 let (notifier, notification_rx) = Notifier::make();
 
+                let stream = downloader.download(url.to_string(), notifier).await?;
+                let stream = stream.into_async_read().compat();
+
+                bot.send_video(chat.id, InputFile::read(stream))
+                    .reply_to_message_id(message.id)
+                    .await?;
+
                 tokio::time::sleep(Duration::from_secs(1)).await;
 
                 bot.edit_message_text(
@@ -133,5 +148,5 @@ async fn handler(
             .await?;
     }
 
-    teloxide::respond(())
+    Ok(teloxide::respond(())?)
 }

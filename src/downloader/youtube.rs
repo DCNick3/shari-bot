@@ -1,8 +1,12 @@
 use crate::bot::Notifier;
 use crate::downloader::Downloader;
 use async_trait::async_trait;
+use bytes::Bytes;
+use futures::stream::BoxStream;
+use futures::Stream;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::Arc;
 
 static YOUTUBE_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?x)^
@@ -54,7 +58,11 @@ impl Downloader for YoutubeDownloader {
         false
     }
 
-    async fn download(&self, url: &str, notifier: Notifier) {
+    async fn download(
+        self: Arc<Self>,
+        url: String,
+        notifier: Notifier,
+    ) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>> {
         todo!()
     }
 }

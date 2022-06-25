@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Context};
 use async_process::Command;
-use async_stream::try_stream;
 use bytes::{Bytes, BytesMut};
-use futures::future::{try_join, FusedFuture};
+use futures::future::FusedFuture;
 use futures::{AsyncReadExt, FutureExt, Stream, TryFutureExt};
 use pin_project_lite::pin_project;
 use std::collections::HashMap;
@@ -11,7 +10,7 @@ use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
 use std::task::Poll;
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::{pin, select, try_join};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{BytesCodec, FramedRead};

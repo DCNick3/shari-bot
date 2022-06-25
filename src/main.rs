@@ -72,13 +72,13 @@ async fn remux_example() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     init();
 
-    // let dispatcher = DownloadDispatcher::new(vec![Arc::new(YoutubeDownloader {})]);
-    // let dispatcher = Arc::new(dispatcher);
+    let dispatcher = DownloadDispatcher::new(vec![Arc::new(YoutubeDownloader {})]);
+    let dispatcher = Arc::new(dispatcher);
 
-    // let bot = Bot::from_env().auto_send();
-    // bot::run_bot(bot, dispatcher).await;
+    let bot = Bot::from_env().auto_send();
+    bot::run_bot(bot, dispatcher).await;
 
-    remux_example().await?;
+    // remux_example().await?;
 
     Ok(())
 }
