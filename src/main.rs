@@ -1,4 +1,16 @@
-use futures::TryStreamExt;
+use crate::dispatcher::DownloadDispatcher;
+use crate::downloader::youtube::YoutubeDownloader;
+use futures::{StreamExt, TryStreamExt};
+use std::sync::Arc;
+use teloxide::adaptors::AutoSend;
+use teloxide::requests::{Requester, RequesterExt};
+use teloxide::types::{
+    ChatId, ChatKind, MediaKind, Message, MessageCommon, MessageEntityKind, MessageKind,
+};
+use teloxide::Bot;
+use tokio::io::AsyncWriteExt;
+use tokio::pin;
+use tracing::{debug, info, trace};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Layer;
@@ -8,21 +20,28 @@ mod dispatcher;
 mod downloader;
 mod remuxer;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-    ffmpeg_next::init().expect("Initializing ffmpeg");
-
+fn init() {
     let filter = tracing_subscriber::EnvFilter::from_default_env();
     let fmt_layer = tracing_subscriber::fmt::layer().with_filter(filter);
 
-    tracing_subscriber::registry().with(fmt_layer).init();
+    tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(console_subscriber::spawn())
+        .init();
 
+    debug!("Logging initialized!");
+
+    ffmpeg_next::init().expect("Initializing ffmpeg");
+}
+
+#[tracing::instrument]
+async fn remux_example() -> anyhow::Result<()> {
     let client = reqwest::ClientBuilder::new()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36")
         .build()?;
 
-    let video_url = "https://rr2---sn-xguxaxjvh-8v1e.googlevideo.com/videoplayback?expire=1656053141&ei=NQm1YsNKmLTWAruApYgL&ip=5.3.162.204&id=o-ADyeXYKBT74wtSF4OZFka8RqPjNZEzWHqE-AyKm-qUxn&itag=136&source=youtube&requiressl=yes&mh=Cs&mm=31%2C29&mn=sn-xguxaxjvh-8v1e%2Csn-n8v7knel&ms=au%2Crdu&mv=m&mvi=2&pl=24&initcwndbps=2011250&vprv=1&mime=video%2Fmp4&gir=yes&clen=2845820&dur=24.232&lmt=1508465802781437&mt=1656031019&fvip=17&keepalive=yes&fexp=24001373%2C24007246&c=ANDROID&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cvprv%2Cmime%2Cgir%2Cclen%2Cdur%2Clmt&sig=AOq0QJ8wRAIgPcwfqqUHdU2vrcpR3xM9IzKwX0GYdzUwOzPHMNdjh9ACICPIhLU-T-Cel5sV8yrzH9zIzAQMQ4yt7kMX-f4U2a67&lsparams=mh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Cinitcwndbps&lsig=AG3C_xAwRgIhAMa73PyAYKy_d-g9FS-FTJvyT20u4p4HoyYTpIDLB1gbAiEAw8D73D4eN9cTn368-oT1DWePbAlmPF3Q1GCuK_iJ5MA%3D";
-    let audio_url = "https://rr2---sn-xguxaxjvh-8v1e.googlevideo.com/videoplayback?expire=1656053186&ei=Ygm1Ypi2ENac8gO-yajoBg&ip=5.3.162.204&id=o-AHeO8Zee_IXOtLOhLB1RLrI6-Tehp5D6PQrJaVcoZtr3&itag=140&source=youtube&requiressl=yes&mh=Cs&mm=31%2C29&mn=sn-xguxaxjvh-8v1e%2Csn-n8v7znly&ms=au%2Crdu&mv=m&mvi=2&pl=24&initcwndbps=1991250&vprv=1&mime=audio%2Fmp4&gir=yes&clen=386822&dur=24.288&lmt=1508465769284246&mt=1656031258&fvip=3&keepalive=yes&fexp=24001373%2C24007246&c=ANDROID&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cvprv%2Cmime%2Cgir%2Cclen%2Cdur%2Clmt&sig=AOq0QJ8wRAIgL6F0Z87epkdXSSTwiBaTM-6ElorxlRnhGxWEnpWZjPsCIEo_YdJ6WgaiWXtL5qWrEVLx3WZXLZYJ9zglILMchEBj&lsparams=mh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Cinitcwndbps&lsig=AG3C_xAwRAIgF39vsYtHJKkPnkX1LvBeUrCEC8OhH5dwhH_SUXFI6Q4CIAN3PyhLaL39KtcozQ_Q9AeVr24xq6TmsrEY_Eftz739";
+    let video_url = "https://rr1---sn-xguxaxjvh-8v1e.googlevideo.com/videoplayback?expire=1656138395&ei=O1a2YumEDJqn1gKWi5noCw&ip=5.3.162.204&id=o-AKV_SXG8stglh-ay6GcLwt2g8_n9Z_-0P2ig_3ePOUYG&itag=136&source=youtube&requiressl=yes&mh=z8&mm=31%2C29&mn=sn-xguxaxjvh-8v1e%2Csn-n8v7znsy&ms=au%2Crdu&mv=m&mvi=1&pl=22&initcwndbps=1536250&vprv=1&mime=video%2Fmp4&gir=yes&clen=18685498&dur=90.399&lmt=1579533885693773&mt=1656116466&fvip=2&keepalive=yes&fexp=24001373%2C24007246&c=ANDROID&txp=1316222&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cvprv%2Cmime%2Cgir%2Cclen%2Cdur%2Clmt&sig=AOq0QJ8wRQIgJsWH0s9_cu8urBc_MplZ5UfpfWPmYthsixfGhEDW4i8CIQC76GXuws_QC4ENSzifnZIxgeZkPnAV1R5RDiaY1NMW4Q%3D%3D&lsparams=mh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Cinitcwndbps&lsig=AG3C_xAwRQIgHBITziGocRprHOU4WOdDuFntewoCYUjU507HBeAuM_kCIQDlj5wFwNyXv3hUPaHcWbp5Dy1hVaaRF9MrCoYk6he5Sg%3D%3D";
+    let audio_url = "https://rr1---sn-xguxaxjvh-8v1e.googlevideo.com/videoplayback?expire=1656138415&ei=T1a2YrSLDryix_APura1QA&ip=5.3.162.204&id=o-AIF1QbedyHpYsWPdxc5OQ6KzOaDtTx8XGe4lT5HJAx3z&itag=140&source=youtube&requiressl=yes&mh=z8&mm=31%2C29&mn=sn-xguxaxjvh-8v1e%2Csn-n8v7znsy&ms=au%2Crdu&mv=m&mvi=1&pl=22&initcwndbps=1536250&vprv=1&mime=audio%2Fmp4&gir=yes&clen=1464847&dur=90.464&lmt=1579533878395083&mt=1656116466&fvip=2&keepalive=yes&fexp=24001373%2C24007246&c=ANDROID&txp=1311222&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cvprv%2Cmime%2Cgir%2Cclen%2Cdur%2Clmt&sig=AOq0QJ8wRgIhAIBPs4twuW1b7wQLDUWNl61A5WiNz5QOAgJsDLbc7mtcAiEAhx-bQvRG15Lv1gHe_la_uYNdcTlN_qZBZe6UMhAiSUE%3D&lsparams=mh%2Cmm%2Cmn%2Cms%2Cmv%2Cmvi%2Cpl%2Cinitcwndbps&lsig=AG3C_xAwRgIhAObaFfKag-QO7_55hp-r0n1qz20j-3csyCXSob30wuSOAiEAiV95Ies8k7ykXo0UozH1hv_-NRJH3oMg9D4LoQ-Uz5M%3D";
 
     let video_resp = client.execute(client.get(video_url).build()?).await?;
     let audio_resp = client.execute(client.get(audio_url).build()?).await?;
@@ -35,9 +54,31 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Starting the remux...");
 
-    remuxer::remux(video_stream, audio_stream, &mut output).await?;
+    let out_stream = remuxer::remux(video_stream, audio_stream).await?;
+
+    pin!(out_stream);
+    while let Some(b) = out_stream.next().await {
+        let b = b?;
+
+        output.write_all(b.as_ref()).await?;
+    }
 
     println!("DONE!!");
+
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
+    init();
+
+    // let dispatcher = DownloadDispatcher::new(vec![Arc::new(YoutubeDownloader {})]);
+    // let dispatcher = Arc::new(dispatcher);
+
+    // let bot = Bot::from_env().auto_send();
+    // bot::run_bot(bot, dispatcher).await;
+
+    remux_example().await?;
 
     Ok(())
 }

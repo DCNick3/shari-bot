@@ -1,13 +1,16 @@
 use crate::downloader::Downloader;
+use std::sync::Arc;
 
-struct Dispatcher {
-    downloaders: Vec<Box<dyn Downloader>>,
+pub struct DownloadDispatcher {
+    downloaders: Vec<Arc<dyn Downloader>>,
 }
 
-impl Dispatcher {
-    pub fn new(downloaders: Vec<Box<dyn Downloader>>) -> Self {
+impl DownloadDispatcher {
+    pub fn new(downloaders: Vec<Arc<dyn Downloader>>) -> Self {
         Self { downloaders }
     }
 
-    pub async fn dispatch(&self, url: &str) {}
+    pub fn find_downloader(&self, url: &str) -> Option<Arc<dyn Downloader>> {
+        self.downloaders.iter().find(|d| d.probe_url(url)).cloned()
+    }
 }

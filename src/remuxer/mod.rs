@@ -1,13 +1,18 @@
 use anyhow::{anyhow, Context};
 use async_process::Command;
-use bytes::Bytes;
-use futures::future::try_join;
+use async_stream::try_stream;
+use bytes::{Bytes, BytesMut};
+use futures::future::{try_join, FusedFuture};
 use futures::{AsyncReadExt, FutureExt, Stream, TryFutureExt};
+use pin_project_lite::pin_project;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
+use std::task::Poll;
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio::{pin, try_join};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::{pin, select, try_join};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
@@ -64,11 +69,48 @@ async fn pump_ffmpeg_stderr(reader: impl AsyncBufRead) -> anyhow::Result<()> {
     Ok(())
 }
 
+pin_project! {
+    struct RemuxStream<
+        W: FusedFuture<Output = anyhow::Result<()>>,
+        S: Stream<Item = Result<BytesMut, tokio::io::Error>>,
+    > {
+        #[pin]
+        work_future: W,
+        #[pin]
+        upstream: S,
+    }
+}
+
+impl<
+        W: FusedFuture<Output = anyhow::Result<()>>,
+        S: Stream<Item = Result<BytesMut, tokio::io::Error>>,
+    > Stream for RemuxStream<W, S>
+{
+    type Item = anyhow::Result<Bytes>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        trace!("poll...");
+        let self_ = self.project();
+        if let Poll::Ready(Err(e)) = self_.work_future.poll(cx) {
+            return Poll::Ready(Some(Err(e)));
+        }
+        if let Poll::Ready(r) = self_.upstream.poll_next(cx) {
+            Poll::Ready(r.map(|r| r.map(|b| b.freeze()).map_err(|e| anyhow::Error::new(e))))
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+#[tracing::instrument(skip_all)]
 pub async fn remux(
     video: impl Stream<Item = anyhow::Result<Bytes>>,
     audio: impl Stream<Item = anyhow::Result<Bytes>>,
-    dest: impl AsyncWrite,
-) -> anyhow::Result<()> {
+    // dest: impl AsyncWrite,
+) -> anyhow::Result<impl Stream<Item = anyhow::Result<Bytes>>> {
     // TODO: get this from config or smth
     let ffmpeg = which::which("ffmpeg").context("Locating the ffmpeg binary")?;
 
@@ -113,7 +155,7 @@ pub async fn remux(
         .spawn()
         .context("Spawning ffmpeg")?;
 
-    pin!(dest);
+    // pin!(dest);
 
     info!("Piping...");
 
@@ -121,62 +163,87 @@ pub async fn remux(
     let stdout = tokio::io::BufReader::new(ffmpeg.stdout.unwrap().compat());
     let stderr = tokio::io::BufReader::new(ffmpeg.stderr.unwrap().compat());
 
-    try_join! {
-        async {
-            pump_ffmpeg_stdout(stdout).await.context("Pumping ffmpeg stdout")
+    let pump_stdout = async {
+        trace!("Starting stdout pump");
+        pump_ffmpeg_stdout(stdout)
+            .await
+            .context("Pumping ffmpeg stdout")
+    };
+    let pump_sterr = async {
+        trace!("Starting stderr pump");
+        pump_ffmpeg_stderr(stderr)
+            .await
+            .context("Pumping ffmpeg stderr")
+    };
+    let wait_ffmpeg = async {
+        trace!("Starting ffmpeg");
+        ffmpeg_status_fut
+            .await
+            .context("Waiting for ffmpeg status")
+            .and_then(|s: ExitStatus| -> anyhow::Result<()> {
+                if s.success() {
+                    Ok(())
+                } else {
+                    Err(anyhow!("ffmpeg exited with bad ExitStatus: {}", s))
+                }
+            })
+    };
+    let pipe_video = async {
+        trace!("Starting video_in pipe");
+        // opening pipes in async context is important!
+        // that's because opening them blocks until the other side opens them and ffmpeg does not open those at the beginning
+        OpenOptions::new()
+            .write(true)
+            .open(video_in_pipe_name)
+            .map_err(anyhow::Error::new)
+            .and_then(|video_in_pipe| async move {
+                write_stream(video, video_in_pipe)
+                    .await
+                    .context("Piping video stream to ffmpeg")
+            })
+            .await
+            .context("Piping video stream to ffmpeg")
+    };
+    let pipe_audio = async {
+        trace!("Starting audio_in pipe");
+        OpenOptions::new()
+            .write(true)
+            .open(audio_in_pipe_name)
+            .map_err(anyhow::Error::new)
+            .and_then(|audio_in_pipe| async move { write_stream(audio, audio_in_pipe).await })
+            .await
+            .context("Piping audio stream to ffmpeg")
+    };
+
+    let joined = async {
+        try_join!(pump_stdout, pump_sterr, wait_ffmpeg, pipe_video, pipe_audio).map(|_| ())
+    }
+    .fuse();
+    let mut joined = Box::pin(joined);
+
+    let mut muxed_out_pipe_fut = async {
+        OpenOptions::new()
+            .read(true)
+            .open(muxed_out_pipe_name)
+            .await
+            .context("Piping muxed stream from ffmpeg to output")
+    };
+    let muxed_out_pipe = select! {
+        r = &mut joined => {
+            match r {
+                Err(e) => Err(e),
+                Ok(_) => panic!("WTF, ffmpeg exited before we even created an output pipe?"),
+            }
         },
-        async {
-            pump_ffmpeg_stderr(stderr).await.context("Pumping ffmpeg stderr")
-        },
-        async {
-            ffmpeg_status_fut.await.context("Waiting for ffmpeg status")
-                .and_then(|s: ExitStatus| -> anyhow::Result<()> {
-                    if s.success() {
-                        Ok(())
-                    } else {
-                        Err(anyhow!("ffmpeg exited with bad ExitStatus: {}", s))
-                    }
-                })
-        },
-        async {
-            // opening pipes in async context is important!
-            // that's because opening them blocks until the other side opens them and ffmpeg does not open those at the beginning
-            OpenOptions::new()
-                .write(true)
-                .open(video_in_pipe_name)
-                .map_err(anyhow::Error::new)
-                .and_then(|video_in_pipe| async move {
-                    write_stream(video, video_in_pipe)
-                        .await
-                        .context("Piping video stream to ffmpeg")
-                })
-                .await
-                .context("Piping video stream to ffmpeg")
-        },
-        async {
-            OpenOptions::new()
-                .write(true)
-                .open(audio_in_pipe_name)
-                .map_err(anyhow::Error::new)
-                .and_then(|audio_in_pipe| async move {
-                    write_stream(audio, audio_in_pipe).await
-                })
-                .await
-                .context("Piping audio stream to ffmpeg")
-        },
-        async {
-            OpenOptions::new()
-                .read(true)
-                .open(muxed_out_pipe_name)
-                .map_err(anyhow::Error::new)
-                .and_then(|mut muxed_out_pipe| async move {
-                    tokio::io::copy(&mut muxed_out_pipe, &mut dest).await
-                        .context("Piping muxed stream from ffmpeg to output")
-                })
-                .await
-                .context("Piping muxed stream from ffmpeg to output")
-        }
+        r = muxed_out_pipe_fut => { r },
     }?;
 
-    Ok(())
+    let reader = FramedRead::new(muxed_out_pipe, BytesCodec::new());
+
+    trace!("returning the RemuxStream!");
+
+    Ok(RemuxStream {
+        work_future: joined,
+        upstream: reader,
+    })
 }
