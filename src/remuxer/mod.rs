@@ -2,15 +2,14 @@ use anyhow::{anyhow, Context};
 use async_process::Command;
 use bytes::{Bytes, BytesMut};
 use futures::future::FusedFuture;
-use futures::{AsyncReadExt, FutureExt, Stream, TryFutureExt};
+use futures::{FutureExt, Stream, TryFutureExt};
 use pin_project_lite::pin_project;
 use std::collections::HashMap;
-use std::future::Future;
 use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
 use std::task::Poll;
 use tokio::fs::OpenOptions;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::{pin, select, try_join};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -97,7 +96,7 @@ impl<
             return Poll::Ready(Some(Err(e)));
         }
         if let Poll::Ready(r) = self_.upstream.poll_next(cx) {
-            Poll::Ready(r.map(|r| r.map(|b| b.freeze()).map_err(|e| anyhow::Error::new(e))))
+            Poll::Ready(r.map(|r| r.map(|b| b.freeze()).map_err(anyhow::Error::new)))
         } else {
             Poll::Pending
         }
@@ -222,7 +221,7 @@ pub async fn remux(
     .fuse();
     let mut joined = Box::pin(joined);
 
-    let mut muxed_out_pipe_fut = async {
+    let muxed_out_pipe_fut = async {
         OpenOptions::new()
             .read(true)
             .open(muxed_out_pipe_name)

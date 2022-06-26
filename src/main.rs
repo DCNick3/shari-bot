@@ -3,15 +3,11 @@ use crate::downloader::youtube::YoutubeDownloader;
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
 use std::time::Duration;
-use teloxide::adaptors::AutoSend;
-use teloxide::requests::{Requester, RequesterExt};
-use teloxide::types::{
-    ChatId, ChatKind, MediaKind, Message, MessageCommon, MessageEntityKind, MessageKind,
-};
+use teloxide::requests::RequesterExt;
 use teloxide::Bot;
 use tokio::io::AsyncWriteExt;
 use tokio::pin;
-use tracing::{debug, info, trace};
+use tracing::debug;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Layer;

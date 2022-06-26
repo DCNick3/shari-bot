@@ -140,7 +140,7 @@ async fn handler(
                     .reply_to_message_id(message.id)
                     .await?;
 
-                let (notifier, notification_rx) = Notifier::make();
+                let (notifier, _notification_rx) = Notifier::make();
 
                 let upload_fut = upload_video(
                     bot.clone(),

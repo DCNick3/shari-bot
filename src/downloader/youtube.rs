@@ -4,7 +4,6 @@ use crate::{remuxer, StreamExt, TryStreamExt};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use futures::Stream;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::io::ErrorKind;
@@ -62,8 +61,8 @@ impl Downloader for YoutubeDownloader {
 
     async fn download(
         self: Arc<Self>,
-        url: String,
-        notifier: Notifier,
+        _url: String,
+        _notifier: Notifier,
     ) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>> {
         let client = reqwest::ClientBuilder::new()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36")
