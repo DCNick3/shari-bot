@@ -2,16 +2,20 @@ pub mod tiktok;
 pub mod youtube;
 
 use crate::bot::{Notifier, ProgressInfo};
+use crate::{StreamExt, TryStreamExt};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use futures::Stream;
 use pin_project_lite::pin_project;
+use reqwest::Client;
 use std::fmt::Debug;
+use std::io::ErrorKind;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tracing::warn;
+use tracing::{debug, warn};
+use url::Url;
 
 #[async_trait]
 pub trait Downloader: Debug + Send + Sync {
@@ -71,4 +75,26 @@ impl<T: Stream<Item = anyhow::Result<Bytes>>> Stream for ProgressStream<T> {
             Poll::Pending => Poll::Pending,
         }
     }
+}
+
+async fn stream_url(
+    client: &Client,
+    url: Url,
+    notifier: Notifier,
+) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>> {
+    let resp = client.execute(client.get(url).build()?).await?;
+
+    let size = resp.content_length();
+
+    debug!("Streaming {:?} bytes...", size);
+
+    let stream = resp.bytes_stream().map_err(|e| anyhow::Error::new(e));
+
+    let stream = ProgressStream::new(stream, size, notifier);
+
+    let stream = stream
+        .map_err(|e| futures::io::Error::new(ErrorKind::Other, e))
+        .boxed();
+
+    Ok(stream)
 }

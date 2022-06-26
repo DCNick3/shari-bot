@@ -74,8 +74,8 @@ async fn main() -> anyhow::Result<()> {
     init();
 
     let dispatcher = DownloadDispatcher::new(vec![
-        Arc::new(YoutubeDownloader {}),
-        Arc::new(TikTokDownloader {}),
+        Arc::new(YoutubeDownloader::new()),
+        Arc::new(TikTokDownloader::new()),
     ]);
     let dispatcher = Arc::new(dispatcher);
 
