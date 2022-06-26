@@ -257,5 +257,5 @@ async fn handler(
             .await?;
     }
 
-    Ok(teloxide::respond(())?)
+    Ok(())
 }

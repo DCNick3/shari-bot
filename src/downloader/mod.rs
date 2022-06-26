@@ -1,3 +1,4 @@
+pub mod tiktok;
 pub mod youtube;
 
 use crate::bot::{Notifier, ProgressInfo};

@@ -1,4 +1,5 @@
 use crate::dispatcher::DownloadDispatcher;
+use crate::downloader::tiktok::TikTokDownloader;
 use crate::downloader::youtube::YoutubeDownloader;
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
@@ -72,7 +73,10 @@ async fn remux_example() -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     init();
 
-    let dispatcher = DownloadDispatcher::new(vec![Arc::new(YoutubeDownloader {})]);
+    let dispatcher = DownloadDispatcher::new(vec![
+        Arc::new(YoutubeDownloader {}),
+        Arc::new(TikTokDownloader {}),
+    ]);
     let dispatcher = Arc::new(dispatcher);
 
     let client = teloxide::net::default_reqwest_settings()

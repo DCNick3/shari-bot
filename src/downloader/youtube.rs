@@ -27,7 +27,7 @@ impl Downloader for YoutubeDownloader {
     fn probe_url(&self, url: &url::Url) -> bool {
         ID_PATTERNS
             .iter()
-            .any(|pattern| pattern.captures(url.as_str()).is_some())
+            .any(|pattern| pattern.is_match(url.as_str()))
     }
 
     fn link_text(&self) -> &'static str {
