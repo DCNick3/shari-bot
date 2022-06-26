@@ -1,0 +1,3 @@
+[submodule "pytube/pytube"]
+	path = pytube/pytube
+	url = git@github.com:pytube/pytube.git
