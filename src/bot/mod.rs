@@ -5,6 +5,7 @@ use futures::{FutureExt, TryStreamExt};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup};
 use teloxide::{
     adaptors::AutoSend,
     dispatching::UpdateFilterExt,
@@ -74,6 +75,14 @@ pub async fn run_bot(bot: AutoSend<Bot>, dispatcher: Arc<DownloadDispatcher>) {
         .await;
 }
 
+fn make_keyboard(link_text: &str, url: Url) -> InlineKeyboardMarkup {
+    let mut keyboard_array: Vec<Vec<InlineKeyboardButton>> = vec![];
+
+    keyboard_array.push(vec![InlineKeyboardButton::url(link_text, url)]);
+
+    InlineKeyboardMarkup::new(keyboard_array)
+}
+
 async fn upload_video(
     bot: AutoSend<Bot>,
     downloader: Arc<dyn Downloader>,
@@ -82,11 +91,14 @@ async fn upload_video(
     message_id: i32,
     notifier: Notifier,
 ) -> anyhow::Result<()> {
-    let stream = downloader.download(url, notifier).await?;
+    let link_text = downloader.link_text();
+
+    let stream = downloader.download(url.clone(), notifier).await?;
     let stream = stream.into_async_read().compat();
 
     bot.send_video(chat_id, InputFile::read(stream).file_name("video.mp4"))
         .reply_to_message_id(message_id)
+        .reply_markup(ReplyMarkup::InlineKeyboard(make_keyboard(link_text, url)))
         .await?;
 
     Ok(())

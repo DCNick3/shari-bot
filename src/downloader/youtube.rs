@@ -30,6 +30,10 @@ impl Downloader for YoutubeDownloader {
             .any(|pattern| pattern.captures(url.as_str()).is_some())
     }
 
+    fn link_text(&self) -> &'static str {
+        "🔗 YouTube"
+    }
+
     #[tracing::instrument(skip(notifier))]
     async fn download(
         self: Arc<Self>,
