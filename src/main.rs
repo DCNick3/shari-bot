@@ -15,11 +15,14 @@ use tracing_subscriber::Layer;
 mod bot;
 mod dispatcher;
 mod downloader;
+#[allow(unused)]
 mod remuxer;
 
 fn init() {
     let filter = tracing_subscriber::EnvFilter::from_default_env();
-    let fmt_layer = tracing_subscriber::fmt::layer().with_filter(filter);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .event_format(tracing_subscriber::fmt::format().compact())
+        .with_filter(filter);
 
     tracing_subscriber::registry()
         .with(fmt_layer)

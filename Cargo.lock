@@ -4081,5 +4081,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unix-named-pipe",
+ "url",
  "which",
 ]

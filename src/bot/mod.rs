@@ -1,7 +1,8 @@
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures::{FutureExt, TryStreamExt};
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::{
@@ -26,13 +27,14 @@ use tokio::sync::watch::Sender;
 use tokio::{pin, select};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info, warn};
+use url::Url;
 
 const SUPERUSER: ChatId = ChatId(379529027);
 
+#[derive(Clone)]
 pub struct ProgressInfo {
     // TODO: probably add progressbar for multiple stages i dunno
-    pub progress: u32,
-    pub text: Arc<String>,
+    pub progress: f32,
 }
 
 pub struct Notifier {
@@ -41,10 +43,7 @@ pub struct Notifier {
 
 impl Notifier {
     fn make() -> (Self, Receiver<ProgressInfo>) {
-        let (tx, rx) = tokio::sync::watch::channel(ProgressInfo {
-            progress: 0,
-            text: Arc::new("".to_string()),
-        });
+        let (tx, rx) = tokio::sync::watch::channel(ProgressInfo { progress: 0.0 });
 
         (Self { chan: tx }, rx)
     }
@@ -78,7 +77,7 @@ pub async fn run_bot(bot: AutoSend<Bot>, dispatcher: Arc<DownloadDispatcher>) {
 async fn upload_video(
     bot: AutoSend<Bot>,
     downloader: Arc<dyn Downloader>,
-    url: String,
+    url: Url,
     chat_id: ChatId,
     message_id: i32,
     notifier: Notifier,
@@ -91,6 +90,21 @@ async fn upload_video(
         .await?;
 
     Ok(())
+}
+
+fn format_progress_bar(progress: f32) -> String {
+    const PROGRESS_BAR_LENGTH: u32 = 30;
+
+    let progress = (progress * PROGRESS_BAR_LENGTH as f32).round() as u32;
+
+    let filled = (0..progress).map(|_| 'O').collect::<String>();
+    let empty = (progress..PROGRESS_BAR_LENGTH)
+        .map(|_| '.')
+        .collect::<String>();
+
+    let progressbar = format!("{}{}", filled, empty);
+
+    progressbar
 }
 
 async fn handler(
@@ -129,10 +143,11 @@ async fn handler(
             .find(|e| e.kind == MessageEntityKind::Url)
         {
             let url = &text.text[url.offset..url.offset + url.length];
+            let url = Url::parse(url).context("Parsing Url that teloxide thinks is a Url")?;
 
             debug!("Extracted URL: {}", url);
 
-            if let Some(downloader) = dispatcher.find_downloader(url) {
+            if let Some(downloader) = dispatcher.find_downloader(&url) {
                 debug!("Found downloader: {:?}", downloader);
 
                 let status_message = bot
@@ -140,17 +155,11 @@ async fn handler(
                     .reply_to_message_id(message.id)
                     .await?;
 
-                let (notifier, _notification_rx) = Notifier::make();
+                let (notifier, mut notification_rx) = Notifier::make();
 
-                let upload_fut = upload_video(
-                    bot.clone(),
-                    downloader,
-                    url.to_string(),
-                    chat.id,
-                    message.id,
-                    notifier,
-                )
-                .fuse();
+                let upload_fut =
+                    upload_video(bot.clone(), downloader, url, chat.id, message.id, notifier)
+                        .fuse();
 
                 let mut interval = tokio::time::interval(Duration::from_secs(1));
 
@@ -166,11 +175,19 @@ async fn handler(
                             let magic = magic.join("");
                             let message = format!("Wowking~   (ﾉ>ω<)ﾉ {}", magic);
 
+                            // it's important to clone here so that the borrow does not live up to suspension point
+                            let status: ProgressInfo = notification_rx.borrow_and_update().deref().clone();
+
+                            let progressbar = format_progress_bar(status.progress);
+
+                            let message = format!("{}\n\n{}", markdown::escape(&message), markdown::code_block(&progressbar));
+
                             bot.edit_message_text(
                                 chat.id,
                                 status_message.id,
                                 message,
                             )
+                            .parse_mode(ParseMode::MarkdownV2)
                             .await?;
 
                             magic_idx += 1;
