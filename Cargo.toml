@@ -40,24 +40,3 @@ anyhow = "1.0.58"
 members = [
     "pytube",
 ]
-
-[patch.crates-io]
-sre-engine = { git = "https://github.com/RustPython/sre-engine" }
-
-# those are very slow w/o optimizations
-[profile.dev.package.sre-engine]
-opt-level = 3
-[profile.dev.package.rustpython-vm]
-opt-level = 3
-[profile.dev.package.rustpython-compiler]
-opt-level = 3
-[profile.dev.package.rustpython-compiler-core]
-opt-level = 3
-[profile.dev.package.rustpython-ast]
-opt-level = 3
-[profile.dev.package.rustpython-parser]
-opt-level = 3
-[profile.dev.package.rustpython-bytecode]
-opt-level = 3
-[profile.dev.package.rustpython-pylib]
-opt-level = 3

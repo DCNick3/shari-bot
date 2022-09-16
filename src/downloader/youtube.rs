@@ -1,5 +1,5 @@
 use crate::bot::Notifier;
-use crate::downloader::{stream_url, Downloader, ProgressStream};
+use crate::downloader::Downloader;
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use bytes::Bytes;
