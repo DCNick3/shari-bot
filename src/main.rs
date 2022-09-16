@@ -27,7 +27,6 @@ fn init() {
 
     tracing_subscriber::registry()
         .with(fmt_layer)
-        .with(console_subscriber::spawn())
         .init();
 
     debug!("Logging initialized!");

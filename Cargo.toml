@@ -16,14 +16,11 @@ rustube = { git = "https://github.com/DCNick3/rustube", rev = "408c2e7bab9209dde
 async-trait = "0.1.56"
 futures = "0.3.21"
 bytes = "1.1.0"
-tokio = { version = "1.19.2", features = ["sync", "tracing", "rt", "macros", "fs", "io-util"] }
+tokio = { version = "1.19.2", features = ["sync", "rt", "macros", "fs", "io-util"] }
 tokio-util = { version = "0.7.3", features = ["compat", "io-util", "codec"] }
 tokio-stream = "0.1.9"
 async-stream = "0.3.3"
 pin-project-lite = "0.2.9"
-
-# Debug tokio stuff
-console-subscriber = "0.1.6"
 
 regex = "1.5.6"
 once_cell = "1.12.0"
