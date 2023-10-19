@@ -1,21 +1,12 @@
 use crate::bot::Notifier;
 use crate::downloader::Downloader;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use regex::Regex;
 use std::sync::Arc;
 use tracing::debug;
-
-pub static ID_PATTERNS: [&once_cell::sync::Lazy<Regex>; 4] = [
-    &rustube::WATCH_URL_PATTERN,
-    &rustube::id::SHORTS_URL_PATTERN,
-    &rustube::EMBED_URL_PATTERN,
-    &rustube::SHARE_URL_PATTERN,
-    // Do not match the ID_PATTERN, as it may be ambiguous
-    // &rustube::ID_PATTERN
-];
+use url::Url;
 
 #[derive(Debug)]
 pub struct YoutubeDownloader {}
@@ -29,9 +20,7 @@ impl YoutubeDownloader {
 #[async_trait]
 impl Downloader for YoutubeDownloader {
     fn probe_url(&self, url: &url::Url) -> bool {
-        ID_PATTERNS
-            .iter()
-            .any(|pattern| pattern.is_match(url.as_str()))
+        rusty_ytdl::get_video_id(url.as_str()).is_some()
     }
 
     fn link_text(&self) -> &'static str {
@@ -41,7 +30,7 @@ impl Downloader for YoutubeDownloader {
     #[tracing::instrument(skip(notifier))]
     async fn download(
         self: Arc<Self>,
-        url: url::Url,
+        url: Url,
         notifier: Notifier,
     ) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>> {
         debug!("Starting download!");
@@ -50,19 +39,25 @@ impl Downloader for YoutubeDownloader {
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36")
             .build()?;
 
-        let video = rustube::video::Video::from_url(&url)
-            .await
-            .context("Fetching video info")?;
+        let video = rusty_ytdl::Video::new(url).context("Creating video")?;
 
-        debug!("Video info fetched!");
+        let info = video.get_info().await.context("Getting video info")?;
+        debug!("Got video info: {:?}", info);
+
+        // rusty_ytdl's format selection algo is kinda whacky...
+        let mut formats = info
+            .formats
+            .iter()
+            .filter(|f| f.has_video && f.has_audio && f.height.is_some())
+            .collect::<Vec<_>>();
+        formats.sort_by_key(|f| f.height);
+        let format = formats.last().unwrap();
+
+        debug!("Chosen format: {:?}", format);
 
         // for now - don't attempt to mux anything
-        let stream = video
-            .best_quality()
-            .ok_or(anyhow!("Could not find any video+audio stream"))?;
-
         // TODO: some videos are requiring segmented download? IDK, probably need to handle those in rustube and expose a streaming interface
-        let stream_url = stream.signature_cipher.url.clone();
+        let stream_url = Url::parse(&format.url).unwrap();
 
         debug!("Got a stream Url: {}", stream_url);
 
