@@ -1,28 +1,19 @@
+mod markdown;
+
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
 use anyhow::{anyhow, Context, Result};
 use futures::{FutureExt, TryStreamExt};
+use grammers_client::{
+    button, reply_markup,
+    types::{Chat, Media, Message},
+    Client, InputMessage, Update,
+};
+use grammers_session::PackedChat;
+use grammers_tl_types::enums;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup};
-use teloxide::{
-    adaptors::AutoSend,
-    dispatching::UpdateFilterExt,
-    dptree,
-    error_handlers::LoggingErrorHandler,
-    payloads::EditMessageTextSetters,
-    payloads::SendMessageSetters,
-    payloads::SendVideoSetters,
-    requests::Requester,
-    types::ParseMode,
-    types::{
-        ChatId, ChatKind, InputFile, MediaKind, Message, MessageCommon, MessageEntityKind,
-        MessageKind, Update,
-    },
-    utils::markdown,
-    Bot,
-};
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
 use tokio::{pin, select};
@@ -30,7 +21,7 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-const SUPERUSER: ChatId = ChatId(379529027);
+const SUPERUSER: i64 = 379529027;
 
 #[derive(Clone)]
 pub struct ProgressInfo {
@@ -56,50 +47,67 @@ impl Notifier {
     }
 }
 
-pub async fn run_bot(bot: AutoSend<Bot>, dispatcher: Arc<DownloadDispatcher>) {
-    let handler = Update::filter_message().endpoint(handler);
+pub async fn run_bot(bot: Client, dispatcher: Arc<DownloadDispatcher>) -> Result<()> {
+    while let Some(update) = bot.next_update().await.context("Getting next update")? {
+        let Update::NewMessage(message) = update else {
+            continue;
+        };
+        if message.outgoing() {
+            continue;
+        }
 
-    teloxide::dispatching::Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![dispatcher])
-        // If no handler succeeded to handle an update, this closure will be called.
-        .default_handler(|upd| async move {
-            warn!("Unhandled update: {:?}", upd);
-        })
-        // If the dispatcher fails for some reason, execute this handler.
-        .error_handler(LoggingErrorHandler::with_custom_text(
-            "An error has occurred in the dispatcher",
-        ))
-        .build()
-        .setup_ctrlc_handler()
-        .dispatch()
-        .await;
+        match handler(message, &bot, dispatcher.clone()).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error occurred while handling message: {:?}", e);
+            }
+        }
+    }
+
+    info!("Stopped getting updates!");
+    Ok(())
 }
 
-fn make_keyboard(link_text: &str, url: Url) -> InlineKeyboardMarkup {
-    let mut keyboard_array: Vec<Vec<InlineKeyboardButton>> = vec![];
-
-    keyboard_array.push(vec![InlineKeyboardButton::url(link_text, url)]);
-
-    InlineKeyboardMarkup::new(keyboard_array)
+fn make_keyboard(link_text: &str, url: Url) -> reply_markup::Inline {
+    reply_markup::inline(vec![vec![button::url(link_text, url)]])
 }
 
 async fn upload_video(
-    bot: AutoSend<Bot>,
+    bot: &Client,
     downloader: Arc<dyn Downloader>,
     url: Url,
-    chat_id: ChatId,
+    chat_id: PackedChat,
     message_id: i32,
     notifier: Notifier,
 ) -> anyhow::Result<()> {
     let link_text = downloader.link_text();
 
-    let stream = downloader.download(url.clone(), notifier).await?;
-    let stream = stream.into_async_read().compat();
+    let (stream, size) = downloader.download(url.clone(), notifier).await?;
+    let mut stream = stream.into_async_read().compat();
 
-    bot.send_video(chat_id, InputFile::read(stream).file_name("video.mp4"))
-        .reply_to_message_id(message_id)
-        .reply_markup(ReplyMarkup::InlineKeyboard(make_keyboard(link_text, url)))
-        .await?;
+    debug!("Uploading the stream to telegram...");
+    let uploaded_video = bot
+        .upload_stream(&mut stream, size as usize, "video.mp4".to_string())
+        .await
+        .context("Uploading video")?;
+
+    debug!("Sending the video message...");
+    bot.send_message(
+        chat_id,
+        InputMessage::text("")
+            .reply_to(Some(message_id))
+            .document(uploaded_video)
+            .reply_markup(&make_keyboard(link_text, url)),
+    )
+    .await
+    .context("Sending video message")?;
+
+    debug!("Successfully sent video!");
+
+    // bot.send_video(chat_id, InputFile::read(stream).file_name("video.mp4"))
+    //     .reply_to_message_id(message_id)
+    //     .reply_markup(ReplyMarkup::InlineKeyboard(make_keyboard(link_text, url)))
+    //     .await?;
 
     Ok(())
 }
@@ -121,57 +129,66 @@ fn format_progress_bar(progress: f32) -> String {
 
 async fn handler(
     message: Message,
-    bot: AutoSend<Bot>,
+    bot: &Client,
     dispatcher: Arc<DownloadDispatcher>,
-) -> anyhow::Result<()> {
-    let chat = message.chat;
-    debug!("Got message from {:?}", chat.id);
-    if !matches!(chat.kind, ChatKind::Private(_)) {
+) -> Result<()> {
+    let chat = message.chat();
+    debug!("Got message from {:?}", chat.id());
+    if !matches!(chat, Chat::User(_)) {
         info!("Ignoring message not from private chat ({:?})", chat);
     }
 
-    if chat.id != SUPERUSER {
+    if chat.id() != SUPERUSER {
         info!("Ignoring message from non-superuser ({:?})", chat);
 
-        bot.send_message(
-            chat.id,
-            "sowwy i am not awwowed to spek with pepel i donbt now (yet) (/ω＼)",
-        )
-        .reply_to_message_id(message.id)
-        .await?;
+        message
+            .reply("sowwy i am not awwowed to spek with pepel i donbt now (yet) (/ω＼)")
+            .await?;
+
         return Ok(());
     }
 
-    if let MessageKind::Common(MessageCommon {
-        media_kind: MediaKind::Text(text),
-        ..
-    }) = message.kind.clone()
+    if message
+        .media()
+        .map_or(false, |m| matches!(m, Media::WebPage(_)))
     {
+        let text = message.text();
         debug!("Text Message: {:#?}", text);
 
-        if let Some(url) = text
-            .entities
-            .iter()
-            .find(|e| e.kind == MessageEntityKind::Url)
+        let text = text.encode_utf16().collect::<Vec<_>>();
+
+        if let Some(url) = message
+            .fmt_entities()
+            .into_iter()
+            .flatten()
+            .find_map(|e| match e {
+                enums::MessageEntity::Url(url) => Some(url),
+                _ => None,
+            })
         {
-            let url = &text.text[url.offset..url.offset + url.length];
-            let url = Url::parse(url).context("Parsing Url that teloxide thinks is a Url")?;
+            let url = &text[url.offset as usize..(url.offset + url.length) as usize];
+            let url = String::from_utf16(url).context("Parsing Url from message")?;
+            let url = Url::parse(&url).context("Parsing Url that telegram marked as a Url")?;
 
             debug!("Extracted URL: {}", url);
 
             if let Some(downloader) = dispatcher.find_downloader(&url) {
                 debug!("Found downloader: {:?}", downloader);
 
-                let status_message = bot
-                    .send_message(chat.id, "Wowking~   (ﾉ>ω<)ﾉ")
-                    .reply_to_message_id(message.id)
-                    .await?;
+                let mut current_status_message_text = "Wowking~   (ﾉ>ω<)ﾉ".to_string();
+                let status_message = message.reply(current_status_message_text.as_str()).await?;
 
                 let (notifier, mut notification_rx) = Notifier::make();
 
-                let upload_fut =
-                    upload_video(bot.clone(), downloader, url, chat.id, message.id, notifier)
-                        .fuse();
+                let upload_fut = upload_video(
+                    &bot,
+                    downloader,
+                    url,
+                    chat.clone().into(),
+                    message.id(),
+                    notifier,
+                )
+                .fuse();
 
                 let mut interval = tokio::time::interval(Duration::from_secs(1));
 
@@ -192,15 +209,22 @@ async fn handler(
 
                             let progressbar = format_progress_bar(status.progress);
 
-                            let message = format!("{}\n\n{}", markdown::escape(&message), markdown::code_block(&progressbar));
+                            let message_text = format!("{}\n\n{}", markdown::escape(
+                                &message
+                                ), markdown::code_inline(&progressbar));
+                            let message = InputMessage::markdown(&message_text);
 
-                            bot.edit_message_text(
-                                chat.id,
-                                status_message.id,
-                                message,
-                            )
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .await?;
+                            debug!("Updating status message");
+
+                            if message_text != current_status_message_text {
+                                bot.edit_message(
+                                    chat.clone(),
+                                    status_message.id(),
+                                    message,
+                                )
+                                .await?;
+                                current_status_message_text = message_text;
+                            }
 
                             magic_idx += 1;
                             if magic_idx == magic_parts.len() {
@@ -208,6 +232,7 @@ async fn handler(
                             }
                         },
                         r = &mut upload_fut => {
+                            debug!("Upload future finished");
                             break r;
                         }
                     }
@@ -216,45 +241,51 @@ async fn handler(
                 match r {
                     Ok(_) => {
                         info!("Successfully sent video!");
-                        bot.edit_message_text(
-                            chat.id,
-                            status_message.id,
+                        bot.edit_message(
+                            chat,
+                            status_message.id(),
                             "did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆",
                         )
                         .await?;
                     }
                     Err(e) => {
                         error!("Error occurred while sending the video: {:?}", e);
-                        bot.edit_message_text(
-                            chat.id,
-                            status_message.id,
-                            format!(
+                        bot.edit_message(
+                            chat,
+                            status_message.id(),
+                            InputMessage::markdown(format!(
                                 "{}\n\n{}",
                                 markdown::escape("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･."),
                                 markdown::code_block(&markdown::escape_code(&format!("{:?}", e)))
-                            ),
+                            )),
                         )
-                        .parse_mode(ParseMode::MarkdownV2)
                         .await?;
                     }
                 }
             } else {
-                bot.send_message(chat.id, "I donbt no ho to doload tis url((999")
-                    .reply_to_message_id(message.id)
-                    .await?;
+                bot.send_message(
+                    chat,
+                    InputMessage::text("I donbt no ho to doload tis url((999")
+                        .reply_to(Some(message.id())),
+                )
+                .await?;
             }
         } else {
             bot.send_message(
-                chat.id,
-                "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
+                chat,
+                InputMessage::text(
+                    "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
+                )
+                .reply_to(Some(message.id())),
             )
-            .reply_to_message_id(message.id)
             .await?;
         }
     } else {
-        bot.send_message(chat.id, "I donbt understan ☆⌒(> _ <)")
-            .reply_to_message_id(message.id)
-            .await?;
+        bot.send_message(
+            chat,
+            InputMessage::text("I donbt understan ☆⌒(> _ <)").reply_to(Some(message.id())),
+        )
+        .await?;
     }
 
     Ok(())

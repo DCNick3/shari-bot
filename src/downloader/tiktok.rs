@@ -164,7 +164,7 @@ impl Downloader for TikTokDownloader {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> anyhow::Result<BoxStream<'static, std::io::Result<Bytes>>> {
+    ) -> anyhow::Result<(BoxStream<'static, std::io::Result<Bytes>>, u64)> {
         let video_link = ttdownloader_get_video_link(&self.client, url).await?;
 
         super::stream_url(&self.client, video_link, notifier).await

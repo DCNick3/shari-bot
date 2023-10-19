@@ -1,11 +1,10 @@
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::tiktok::TikTokDownloader;
 use crate::downloader::youtube::YoutubeDownloader;
+use anyhow::Context;
 use futures::{StreamExt, TryStreamExt};
+use grammers_client::Config;
 use std::sync::Arc;
-use std::time::Duration;
-use teloxide::requests::RequesterExt;
-use teloxide::Bot;
 use tokio::io::AsyncWriteExt;
 use tokio::pin;
 use tracing::debug;
@@ -25,9 +24,7 @@ fn init() {
         .event_format(tracing_subscriber::fmt::format().compact())
         .with_filter(filter);
 
-    tracing_subscriber::registry()
-        .with(fmt_layer)
-        .init();
+    tracing_subscriber::registry().with(fmt_layer).init();
 
     debug!("Logging initialized!");
 
@@ -78,14 +75,36 @@ async fn main() -> anyhow::Result<()> {
     ]);
     let dispatcher = Arc::new(dispatcher);
 
-    let client = teloxide::net::default_reqwest_settings()
-        .timeout(Duration::from_secs(120)) // TODO: this is a "feature" of teloxide unfortunately =(
-        // See https://github.com/teloxide/teloxide/issues/529
-        .build()?;
-    let bot = Bot::from_env_with_client(client).auto_send();
-    bot::run_bot(bot, dispatcher).await;
+    let session_file_name =
+        std::env::var("SESSION_FILE_NAME").context("SESSION_FILE_NAME env var not set")?;
+    let bot_token = std::env::var("BOT_TOKEN").context("TELOXIDE_TOKEN env var not set")?;
+    let api_id = std::env::var("API_ID")
+        .context("API_ID env var not set")?
+        .parse()
+        .context("API_ID env var is not a number")?;
+    let api_hash = std::env::var("API_HASH").context("API_HASH env var not set")?;
+    let session = grammers_session::Session::load_file_or_create(&session_file_name)
+        .context("Loading telegram session")?;
+    let client = grammers_client::Client::connect(Config {
+        session,
+        api_id,
+        api_hash,
+        params: Default::default(),
+    })
+    .await
+    .context("Connecting to telegram")?;
 
-    // remux_example().await?;
+    if !client.is_authorized().await.context("Checking auth")? {
+        client.bot_sign_in(&bot_token).await.context("Signing in")?;
+        client
+            .session()
+            .save_to_file(&session_file_name)
+            .context("Saving session")?;
+    }
+
+    bot::run_bot(client, dispatcher)
+        .await
+        .context("Running bot")?;
 
     Ok(())
 }

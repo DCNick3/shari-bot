@@ -32,7 +32,7 @@ impl Downloader for YoutubeDownloader {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>> {
+    ) -> anyhow::Result<(BoxStream<'static, futures::io::Result<Bytes>>, u64)> {
         debug!("Starting download!");
 
         let client = reqwest::ClientBuilder::new()

@@ -3,6 +3,7 @@ pub mod youtube;
 
 use crate::bot::{Notifier, ProgressInfo};
 use crate::{StreamExt, TryStreamExt};
+use anyhow::Context as _;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -25,7 +26,7 @@ pub trait Downloader: Debug + Send + Sync {
         self: Arc<Self>,
         url: url::Url,
         notifier: Notifier,
-    ) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>>;
+    ) -> anyhow::Result<(BoxStream<'static, futures::io::Result<Bytes>>, u64)>;
 }
 
 pin_project! {
@@ -81,20 +82,20 @@ async fn stream_url(
     client: &Client,
     url: Url,
     notifier: Notifier,
-) -> anyhow::Result<BoxStream<'static, futures::io::Result<Bytes>>> {
+) -> anyhow::Result<(BoxStream<'static, futures::io::Result<Bytes>>, u64)> {
     let resp = client.execute(client.get(url).build()?).await?;
 
-    let size = resp.content_length();
+    let size = resp.content_length().context("No content length??")?;
 
     debug!("Streaming {:?} bytes...", size);
 
     let stream = resp.bytes_stream().map_err(|e| anyhow::Error::new(e));
 
-    let stream = ProgressStream::new(stream, size, notifier);
+    let stream = ProgressStream::new(stream, Some(size), notifier);
 
     let stream = stream
         .map_err(|e| futures::io::Error::new(ErrorKind::Other, e))
         .boxed();
 
-    Ok(stream)
+    Ok((stream, size))
 }
