@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shari-bot
+  labels:
+    app: shari-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shari-bot
+  template:
+    metadata:
+      labels:
+        app: shari-bot
+      annotations:
+        instrumentation.opentelemetry.io/inject-sdk: "true"
+    spec:
+      volumes:
+        - name: shari-bot-data
+          persistentVolumeClaim:
+            claimName: shari-bot-pvc
+      containers:
+        - name: shari-bot
+          image: ghcr.io/dcnick3/shari-bot:ref-e6724ca82149004873f98c835298c515cda62963
+          volumeMounts:
+            - mountPath: /data
+              name: shari-bot-data
+          env:
+            - name: CONFIG_TELEGRAM__ACCOUNT__TYPE
+              value: Bot
+            - name: CONFIG_TELEGRAM__ACCOUNT__TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: shari-bot-secrets
+                  key: telegram_account_token
+
+            - name: CONFIG_TELEGRAM__API_ID
+              valueFrom:
+                secretKeyRef:
+                  name: shari-bot-secrets
+                  key: telegram_api_id
+            - name: CONFIG_TELEGRAM__API_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: shari-bot-secrets
+                  key: telegram_api_hash

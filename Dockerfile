@@ -13,11 +13,11 @@ FROM rust:1-slim-buster as build
 
 ENV CARGO_INCREMENTAL=0
 
-WORKDIR /volume
-COPY . .
-
 # install python
 RUN apt update && apt install -y curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /volume
+COPY . .
 
 RUN --mount=type=cache,target=/root/.cargo/registry --mount=type=cache,target=/volume/target \
     cargo build --locked --profile ship && \
