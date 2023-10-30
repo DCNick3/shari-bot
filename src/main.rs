@@ -2,38 +2,154 @@ use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::tiktok::TikTokDownloader;
 use crate::downloader::youtube::YoutubeDownloader;
 use anyhow::Context;
+use anyhow::{bail, Result};
 use futures::{StreamExt, TryStreamExt};
-use grammers_client::Config;
+use grammers_client::{Client, Config, InitParams, SignInError};
+use grammers_session::Session;
+use std::path::Path;
 use std::sync::Arc;
-use tracing::debug;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::Layer;
+use tracing::{debug, error, info, warn};
 
 mod bot;
+mod config;
 mod dispatcher;
 mod downloader;
+mod init_tracing;
+
+async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
+    let mut catch_up = false;
+
+    let session = match &config.session_storage {
+        Some(session_storage) => {
+            let session_storage = Path::new(session_storage);
+            if session_storage.exists() {
+                info!("Loading saved session from {}", session_storage.display());
+                // only request catch up when loading our own session, not a prepared or a new one
+                catch_up = true;
+                Some(Session::load_file(session_storage).context("Loading session")?)
+            } else {
+                info!("No session file found, creating a new session");
+                None
+            }
+        }
+        None => {
+            warn!("No session storage configured, creating a new session. This will create dangling sessions on restarts!");
+            None
+        }
+    };
+
+    let session = match session {
+        Some(session) => session,
+        None => match &config.account {
+            config::TelegramAccount::PreparedSession { session } => {
+                info!("Loading session from config");
+                Session::load(session).context("Loading session")?
+            }
+            _ => Session::new(),
+        },
+    };
+
+    let client = Client::connect(Config {
+        session,
+        api_id: config.api_id,
+        api_hash: config.api_hash.clone(),
+        params: InitParams {
+            catch_up,
+            ..Default::default()
+        },
+    })
+    .await
+    .context("Connecting to telegram")?;
+
+    if !client
+        .is_authorized()
+        .await
+        .context("failed to check whether we are signed in")?
+    {
+        info!("Not signed in, signing in...");
+
+        match &config.account {
+            config::TelegramAccount::PreparedSession { .. } => {
+                bail!("Prepared session is not signed in, please sign in manually and provide the session file")
+            }
+            config::TelegramAccount::Bot { token } => {
+                info!("Signing in as bot");
+                client
+                    .bot_sign_in(token)
+                    .await
+                    .context("Signing in as bot")?;
+            }
+            config::TelegramAccount::User { phone } => {
+                info!("Signing in as user");
+                let login_token = client
+                    .request_login_code(phone)
+                    .await
+                    .context("Requesting login code")?;
+
+                info!("Asked telegram for login code, waiting for it to be entered");
+
+                let mut logic_code = String::new();
+                std::io::stdin()
+                    .read_line(&mut logic_code)
+                    .context("Reading login code")?;
+                let logic_code = logic_code.strip_suffix('\n').unwrap();
+
+                match client.sign_in(&login_token, &logic_code).await {
+                    Ok(_) => {}
+                    Err(SignInError::PasswordRequired(password_token)) => {
+                        info!(
+                            "2FA Password required, asking for it. Password hint: {}",
+                            password_token.hint().unwrap()
+                        );
+                        let mut password = String::new();
+                        std::io::stdin()
+                            .read_line(&mut password)
+                            .context("Reading password")?;
+                        let password = password.strip_suffix('\n').unwrap();
+
+                        client
+                            .check_password(password_token, password)
+                            .await
+                            .context("Checking password")?;
+                    }
+                    Err(e) => {
+                        return Err(e).context("Signing in as user");
+                    }
+                }
+            }
+        }
+
+        if config.session_storage.is_some() {
+            info!("Signed in, saving session");
+            save_session(&client, config)?;
+        } else {
+            warn!("Signed in, but no session storage configured. This will leave dangling sessions on restarts!");
+        }
+    }
+
+    Ok(client)
+}
+
+fn save_session(client: &Client, config: &config::Telegram) -> Result<()> {
+    if let Some(session_storage) = &config.session_storage {
+        debug!("Saving session to {}", session_storage);
+        std::fs::write(session_storage, client.session().save()).context("Saving session")?;
+    }
+
+    Ok(())
+}
+
+async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Result<()> {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 5));
+
+    loop {
+        interval.tick().await;
+        save_session(client, config)?;
+    }
+}
+
 // #[allow(unused)]
 // mod remuxer;
-
-fn init() {
-    let filter = tracing_subscriber::EnvFilter::from_default_env();
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .event_format(tracing_subscriber::fmt::format().compact())
-        .with_span_events(
-            tracing_subscriber::fmt::format::FmtSpan::NEW
-                // | tracing_subscriber::fmt::format::FmtSpan::ENTER
-                // | tracing_subscriber::fmt::format::FmtSpan::EXIT
-                | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
-        )
-        .with_filter(filter);
-
-    tracing_subscriber::registry().with(fmt_layer).init();
-
-    debug!("Logging initialized!");
-
-    // ffmpeg_next::init().expect("Initializing ffmpeg");
-}
 
 // #[tracing::instrument]
 // async fn remux_example() -> anyhow::Result<()> {
@@ -70,8 +186,18 @@ fn init() {
 // }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-    init();
+async fn main() -> Result<()> {
+    init_tracing::init_tracing()?;
+
+    let environment = std::env::var("ENVIRONMENT").context(
+        "Please set ENVIRONMENT env var (probably you want to use either 'prod' or 'dev')",
+    )?;
+
+    let config = config::Config::load(&environment).context("Loading config has failed")?;
+
+    info!("Resolved config: {:#?}", config);
+
+    let client = connect_and_login(&config.telegram).await?;
 
     let dispatcher = DownloadDispatcher::new(vec![
         Arc::new(YoutubeDownloader::new()),
@@ -79,36 +205,25 @@ async fn main() -> anyhow::Result<()> {
     ]);
     let dispatcher = Arc::new(dispatcher);
 
-    let session_file_name =
-        std::env::var("SESSION_FILE_NAME").context("SESSION_FILE_NAME env var not set")?;
-    let bot_token = std::env::var("BOT_TOKEN").context("TELOXIDE_TOKEN env var not set")?;
-    let api_id = std::env::var("API_ID")
-        .context("API_ID env var not set")?
-        .parse()
-        .context("API_ID env var is not a number")?;
-    let api_hash = std::env::var("API_HASH").context("API_HASH env var not set")?;
-    let session = grammers_session::Session::load_file_or_create(&session_file_name)
-        .context("Loading telegram session")?;
-    let client = grammers_client::Client::connect(Config {
-        session,
-        api_id,
-        api_hash,
-        params: Default::default(),
-    })
-    .await
-    .context("Connecting to telegram")?;
+    tokio::select!(
+        _ = tokio::signal::ctrl_c() => {
+            info!("Got SIGINT; quitting early gracefully");
+        }
+        r = bot::run_bot(&client, dispatcher) => {
+            match r {
+                Ok(_) => info!("Got disconnected from Telegram gracefully"),
+                Err(e) => error!("Error during update handling: {}", e),
+            }
+        }
+        r = save_session_periodic(&client, &config.telegram) => {
+            match r {
+                Ok(_) => unreachable!(),
+                Err(e) => error!("Error during session saving: {}", e),
+            }
+        }
+    );
 
-    if !client.is_authorized().await.context("Checking auth")? {
-        client.bot_sign_in(&bot_token).await.context("Signing in")?;
-        client
-            .session()
-            .save_to_file(&session_file_name)
-            .context("Saving session")?;
-    }
-
-    bot::run_bot(client, dispatcher)
-        .await
-        .context("Running bot")?;
+    save_session(&client, &config.telegram)?;
 
     Ok(())
 }

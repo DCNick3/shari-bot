@@ -1,0 +1,3 @@
+telegram:
+#  session_storage: "tguser.session"
+  session_storage: "tgbot.session"

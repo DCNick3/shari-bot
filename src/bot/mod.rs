@@ -47,8 +47,8 @@ impl Notifier {
     }
 }
 
-pub async fn run_bot(bot: Client, dispatcher: Arc<DownloadDispatcher>) -> Result<()> {
-    while let Some(update) = bot.next_update().await.context("Getting next update")? {
+pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>) -> Result<()> {
+    while let Some(update) = client.next_update().await.context("Getting next update")? {
         let Update::NewMessage(message) = update else {
             continue;
         };
@@ -56,7 +56,7 @@ pub async fn run_bot(bot: Client, dispatcher: Arc<DownloadDispatcher>) -> Result
             continue;
         }
 
-        match handle_message(message, &bot, dispatcher.clone()).await {
+        match handle_message(message, &client, dispatcher.clone()).await {
             Ok(_) => {}
             Err(e) => {
                 error!("Error occurred while handling message: {:?}", e);

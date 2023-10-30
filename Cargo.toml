@@ -1,5 +1,5 @@
 [package]
-name = "yasd"
+name = "shari-bot"
 version = "0.1.0"
 edition = "2021"
 
@@ -27,6 +27,10 @@ pin-project-lite = "0.2.9"
 regex = "1.5.6"
 once_cell = "1.12.0"
 
+serde = "1.0.189"
+config = "0.13.3"
+hex-serde = "0.1.0"
+
 # these crates are used by the remuxer
 # however, we do not actually use the remuxer: it's not possible to know the size of the resulting file before it's fully downloaded & remuxed and telegram requires to specify the file size upfront
 # soo, it's a dead code for now
@@ -40,3 +44,11 @@ once_cell = "1.12.0"
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.11", features = ["env-filter", "fmt"] }
 anyhow = "1.0.58"
+opentelemetry = { version = "0.20.0", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.13.0"
+tracing-opentelemetry = "0.21.0"
+
+[profile.ship]
+inherits = "release"
+debug = 0
+lto = 'thin'

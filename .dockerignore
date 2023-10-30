@@ -1,0 +1,5 @@
+.idea
+target
+*.mp4
+*.session
+Dockerfile
