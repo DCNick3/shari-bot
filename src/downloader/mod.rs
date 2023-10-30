@@ -1,7 +1,7 @@
 pub mod tiktok;
 pub mod youtube;
 
-use crate::bot::{Notifier, ProgressInfo};
+use crate::bot::{Notifier, UploadStatus};
 use crate::{StreamExt, TryStreamExt};
 use anyhow::Context as _;
 use async_trait::async_trait;
@@ -60,7 +60,7 @@ impl<T: Stream<Item = anyhow::Result<Bytes>>> Stream for ProgressStream<T> {
                 if let Some(Ok(bytes)) = &bytes {
                     *self_.byte_counter += bytes.len() as u64;
                     if let &mut Some(size) = self_.size {
-                        if let Err(e) = self_.notifier.notify_status(ProgressInfo {
+                        if let Err(e) = self_.notifier.notify_status(UploadStatus::Uploading {
                             progress: *self_.byte_counter as f32 / size as f32,
                         }) {
                             warn!("Got an error while sending a notification, will not send further notifications: {:?}", e);

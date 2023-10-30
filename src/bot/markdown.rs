@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! Utils for working with the [Markdown V2 message style][spec].
 //!
 //! [spec]: https://core.telegram.org/bots/api#markdownv2-style

@@ -13,7 +13,7 @@ grammers-tl-types = { git = "https://github.com/Lonami/grammers.git", rev = "ff7
 reqwest = { version = "0.11.20", default-features = false, features = ["rustls-tls-webpki-roots", "stream"] }
 url = "2.2.2"
 
-rusty_ytdl = "0.6.4"
+rusty_ytdl = { git = "https://github.com/DCNick3/rusty_ytdl.git", rev = "da70524f8747c0de91051a6114f73e9826b7c9fc", default-features = false }
 
 async-trait = "0.1.56"
 futures = "0.3.21"
@@ -27,12 +27,15 @@ pin-project-lite = "0.2.9"
 regex = "1.5.6"
 once_cell = "1.12.0"
 
-ffmpeg-next = "6.0.0"
+# these crates are used by the remuxer
+# however, we do not actually use the remuxer: it's not possible to know the size of the resulting file before it's fully downloaded & remuxed and telegram requires to specify the file size upfront
+# soo, it's a dead code for now
+# ffmpeg-next = "6.0.0"
 
-unix-named-pipe = "0.2.0"
-tempdir = "0.3.7"
-async-process = "1.4.0"
-which = "4.2.5"
+# unix-named-pipe = "0.2.0"
+# tempdir = "0.3.7"
+# async-process = "1.4.0"
+# which = "5.0.0"
 
 tracing = "0.1.35"
 tracing-subscriber = { version = "0.3.11", features = ["env-filter", "fmt"] }
