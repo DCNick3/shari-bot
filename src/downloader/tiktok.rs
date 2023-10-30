@@ -1,5 +1,5 @@
 use crate::bot::Notifier;
-use crate::downloader::Downloader;
+use crate::downloader::{Downloader, VideoInformation};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -67,7 +67,7 @@ async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> anyhow::Re
 
     debug!("Sending POST request to get video links...");
     let resp = client
-        .post("https://ttdownloader.com/req/")
+        .post("https://ttdownloader.com/search/")
         .form(&params)
         .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36")
         .header(ORIGIN, "https://ttdownloader.com")
@@ -164,9 +164,13 @@ impl Downloader for TikTokDownloader {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> anyhow::Result<(BoxStream<'static, std::io::Result<Bytes>>, u64)> {
+    ) -> anyhow::Result<(
+        Option<VideoInformation>,
+        BoxStream<'static, std::io::Result<Bytes>>,
+        u64,
+    )> {
         let video_link = ttdownloader_get_video_link(&self.client, url).await?;
 
-        super::stream_url(&self.client, video_link, notifier).await
+        super::stream_url(&self.client, video_link, None, notifier).await
     }
 }

@@ -15,8 +15,15 @@ use std::io::ErrorKind;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use tracing::{debug, warn};
 use url::Url;
+
+pub struct VideoInformation {
+    pub width: i32,
+    pub height: i32,
+    pub duration: Duration,
+}
 
 #[async_trait]
 pub trait Downloader: Debug + Send + Sync {
@@ -26,7 +33,11 @@ pub trait Downloader: Debug + Send + Sync {
         self: Arc<Self>,
         url: url::Url,
         notifier: Notifier,
-    ) -> anyhow::Result<(BoxStream<'static, futures::io::Result<Bytes>>, u64)>;
+    ) -> anyhow::Result<(
+        Option<VideoInformation>,
+        BoxStream<'static, futures::io::Result<Bytes>>,
+        u64,
+    )>;
 }
 
 pin_project! {
@@ -81,8 +92,13 @@ impl<T: Stream<Item = anyhow::Result<Bytes>>> Stream for ProgressStream<T> {
 async fn stream_url(
     client: &Client,
     url: Url,
+    video_information: Option<VideoInformation>,
     notifier: Notifier,
-) -> anyhow::Result<(BoxStream<'static, futures::io::Result<Bytes>>, u64)> {
+) -> anyhow::Result<(
+    Option<VideoInformation>,
+    BoxStream<'static, futures::io::Result<Bytes>>,
+    u64,
+)> {
     let resp = client.execute(client.get(url).build()?).await?;
 
     let size = resp.content_length().context("No content length??")?;
@@ -97,5 +113,5 @@ async fn stream_url(
         .map_err(|e| futures::io::Error::new(ErrorKind::Other, e))
         .boxed();
 
-    Ok((stream, size))
+    Ok((video_information, stream, size))
 }

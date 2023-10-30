@@ -4,6 +4,7 @@ use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
 use anyhow::{anyhow, Context, Result};
 use futures::{FutureExt, TryStreamExt};
+use grammers_client::types::Attribute;
 use grammers_client::{
     button, reply_markup,
     types::{Chat, Message},
@@ -80,7 +81,7 @@ async fn upload_video(
 ) -> Result<()> {
     let link_text = downloader.link_text();
 
-    let (stream, size) = downloader.download(url.clone(), notifier).await?;
+    let (video_information, stream, size) = downloader.download(url.clone(), notifier).await?;
     let mut stream = stream.into_async_read().compat();
 
     debug!("Uploading the stream to telegram...");
@@ -90,12 +91,24 @@ async fn upload_video(
         .context("Uploading video")?;
 
     debug!("Sending the video message...");
+    let mut message = InputMessage::text("")
+        .document(uploaded_video)
+        .reply_markup(&make_keyboard(link_text, url));
+    if let Some(video_information) = video_information {
+        // big files require this information
+        // short videos can be sent without it
+        // we only return this from youtube videos for now
+        message = message.attribute(Attribute::Video {
+            h: video_information.height,
+            w: video_information.width,
+            duration: video_information.duration,
+            round_message: false,
+            supports_streaming: true,
+        });
+    }
+
     initial_message
-        .reply(
-            InputMessage::text("")
-                .document(uploaded_video)
-                .reply_markup(&make_keyboard(link_text, url)),
-        )
+        .reply(message)
         .await
         .context("Sending video message")?;
 

@@ -22,8 +22,8 @@ fn init() {
         .event_format(tracing_subscriber::fmt::format().compact())
         .with_span_events(
             tracing_subscriber::fmt::format::FmtSpan::NEW
-                | tracing_subscriber::fmt::format::FmtSpan::ENTER
-                | tracing_subscriber::fmt::format::FmtSpan::EXIT
+                // | tracing_subscriber::fmt::format::FmtSpan::ENTER
+                // | tracing_subscriber::fmt::format::FmtSpan::EXIT
                 | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
         )
         .with_filter(filter);
