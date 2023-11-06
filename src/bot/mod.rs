@@ -246,7 +246,7 @@ async fn handle_message(
         info!("Ignoring message from non-superuser ({:?})", chat);
 
         message
-            .reply("sowwy i am not awwowed to spek with pepel i donbt now (yet) (/ω＼)")
+            .reply("Sorry, I am not allowed to speak with people I don't know (yet) (/ω＼)")
             .await?;
 
         return Ok(());
@@ -277,7 +277,7 @@ async fn handle_message(
     else {
         message
             .reply(InputMessage::text(
-                "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
+                "Send me something with a URL in it and I will try to figure it out.",
             ))
             .await?;
         return Ok(());
@@ -291,14 +291,14 @@ async fn handle_message(
 
     let Some(downloader) = dispatcher.find_downloader(&url) else {
         message
-            .reply("I donbt no ho to doload tis url((999")
+            .reply("I don't know how to download this URL((999")
             .await?;
         return Ok(());
     };
 
     debug!("Found downloader: {:?}", downloader);
 
-    let status_message = message.reply("Wowking~   (ﾉ>ω<)ﾉ").await?;
+    let status_message = message.reply("Working~ (ﾉ>ω<)ﾉ").await?;
 
     let end_message = match upload_with_status_updates(
         client,
@@ -317,7 +317,7 @@ async fn handle_message(
             error!("Error occurred while sending the video: {:?}", e);
             // TODO: make the error a code block
             // the markdown parser seems a bit buggy, so can't really use it here.
-            Cow::Owned(format!("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.\n\n{:?}", e))
+            Cow::Owned(format!("error(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.\n\n{:?}", e))
         }
     };
 
