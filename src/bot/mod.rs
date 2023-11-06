@@ -17,8 +17,9 @@ use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio::time::timeout;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::{debug, error, info, info_span, instrument, Instrument};
+use tracing::{debug, error, info, info_span, instrument, Instrument, warn};
 use url::Url;
 
 const SUPERUSER: i64 = 379529027;
@@ -47,7 +48,7 @@ impl Notifier {
     }
 }
 
-pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>) -> Result<()> {
+pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>, message_handle_timeout: Duration) -> Result<()> {
     while let Some(update) = client.next_update().await.context("Getting next update")? {
         let Update::NewMessage(message) = update else {
             continue;
@@ -56,12 +57,22 @@ pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>) -> Re
             continue;
         }
 
-        match handle_message(message, &client, dispatcher.clone()).await {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error occurred while handling message: {:?}", e);
+        let dispatcher = dispatcher.clone();
+        let client = client.clone();
+        tokio::spawn(async move {
+            let task = timeout(message_handle_timeout, handle_message(message, client, dispatcher));
+
+            if let Ok(handle_result) = task.await {
+                match handle_result {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Error occurred while handling message: {:?}", e);
+                    }
+                }
+            } else {
+                warn!("Took too long to handle a message, cancelled the task");
             }
-        }
+        });
     }
 
     info!("Stopped getting updates!");
@@ -233,7 +244,7 @@ async fn upload_with_status_updates(
 #[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()))]
 async fn handle_message(
     message: Message,
-    client: &Client,
+    client: Client,
     dispatcher: Arc<DownloadDispatcher>,
 ) -> Result<()> {
     let chat = message.chat();
@@ -301,7 +312,7 @@ async fn handle_message(
     let status_message = message.reply("Wowking~   (ﾉ>ω<)ﾉ").await?;
 
     let end_message = match upload_with_status_updates(
-        client,
+        &client,
         &message,
         &status_message,
         url,
