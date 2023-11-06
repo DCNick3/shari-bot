@@ -27,11 +27,11 @@ pub struct VideoInformation {
 
 #[async_trait]
 pub trait Downloader: Debug + Send + Sync {
-    fn probe_url(&self, url: &url::Url) -> bool;
+    fn probe_url(&self, url: &Url) -> bool;
     fn link_text(&self) -> &'static str;
     async fn download(
         self: Arc<Self>,
-        url: url::Url,
+        url: Url,
         notifier: Notifier,
     ) -> anyhow::Result<(
         Option<VideoInformation>,

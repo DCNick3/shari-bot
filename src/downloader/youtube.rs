@@ -20,7 +20,7 @@ impl YoutubeDownloader {
 
 #[async_trait]
 impl Downloader for YoutubeDownloader {
-    fn probe_url(&self, url: &url::Url) -> bool {
+    fn probe_url(&self, url: &Url) -> bool {
         rusty_ytdl::get_video_id(url.as_str()).is_some()
     }
 
