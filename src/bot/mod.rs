@@ -1,4 +1,5 @@
 mod markdown;
+mod whitelist;
 
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
@@ -19,10 +20,13 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
 use tokio::time::timeout;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::{debug, error, info, info_span, instrument, Instrument, warn};
+use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 use url::Url;
 
-const SUPERUSER: i64 = 379529027;
+type UserId = i64;
+
+// 341860207
+const SUPERUSER: UserId = 379529027;
 
 #[derive(Clone)]
 pub enum UploadStatus {

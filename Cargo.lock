@@ -2650,6 +2650,7 @@ dependencies = [
  "reqwest",
  "rusty_ytdl",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tokio-util",
