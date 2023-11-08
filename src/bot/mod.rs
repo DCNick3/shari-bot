@@ -52,7 +52,11 @@ impl Notifier {
     }
 }
 
-pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>, message_handle_timeout: Duration) -> Result<()> {
+pub async fn run_bot(
+    client: &Client,
+    dispatcher: Arc<DownloadDispatcher>,
+    message_handle_timeout: Duration,
+) -> Result<()> {
     while let Some(update) = client.next_update().await.context("Getting next update")? {
         let Update::NewMessage(message) = update else {
             continue;
@@ -64,7 +68,10 @@ pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>, messa
         let dispatcher = dispatcher.clone();
         let client = client.clone();
         tokio::spawn(async move {
-            let task = timeout(message_handle_timeout, handle_message(message, client, dispatcher));
+            let task = timeout(
+                message_handle_timeout,
+                handle_message(message, client, dispatcher),
+            );
 
             if let Ok(handle_result) = task.await {
                 match handle_result {
@@ -315,26 +322,20 @@ async fn handle_message(
 
     let status_message = message.reply("Wowking~   (ﾉ>ω<)ﾉ").await?;
 
-    let end_message = match upload_with_status_updates(
-        &client,
-        &message,
-        &status_message,
-        url,
-        downloader,
-    )
-    .await
-    {
-        Ok(_) => {
-            info!("Successfully sent video!");
-            Cow::Borrowed("did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
-        }
-        Err(e) => {
-            error!("Error occurred while sending the video: {:?}", e);
-            // TODO: make the error a code block
-            // the markdown parser seems a bit buggy, so can't really use it here.
-            Cow::Owned(format!("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.\n\n{:?}", e))
-        }
-    };
+    let end_message =
+        match upload_with_status_updates(&client, &message, &status_message, url, downloader).await
+        {
+            Ok(_) => {
+                info!("Successfully sent video!");
+                Cow::Borrowed("did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
+            }
+            Err(e) => {
+                error!("Error occurred while sending the video: {:?}", e);
+                // TODO: make the error a code block
+                // the markdown parser seems a bit buggy, so can't really use it here.
+                Cow::Owned(format!("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.\n\n{:?}", e))
+            }
+        };
 
     status_message.edit(end_message.as_ref()).await?;
 
