@@ -6,10 +6,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::UserId;
 
-// pub trait WhitelistStorage {
-//     kjjn
-// }
-
 /// Keeps track of allowed users storing updates on the disk.
 pub struct Whitelist {
     storage_path: PathBuf,
@@ -51,7 +47,35 @@ impl Whitelist {
         Ok(())
     }
 
-    fn insert() {}
-    fn remove() {}
-    fn contains() {}
+    /// Adds a user to the whitelist.
+    ///
+    /// Returns whether the user was newly inserted. That is:
+    ///
+    /// - If the set did not previously contain this value, `true` is returned,
+    ///     updates are stored in the disk.
+    /// - If the set already contained this value, `false` is returned.
+    pub fn insert(&mut self, user: UserId) -> bool {
+        let updated = self.allowed_users.insert(user);
+        if updated {
+            self.store_into_disk();
+        }
+        updated
+    }
+
+    /// Remove a user from the whitelist.
+    ///
+    /// Returns whether the user was removed. If yes, the list is propagated
+    /// on disk.
+    pub fn remove(&mut self, user: UserId) -> bool {
+        let updated = self.allowed_users.remove(&user);
+        if updated {
+            self.store_into_disk();
+        }
+        updated
+    }
+
+    /// Returns true if the list contains a user.
+    pub fn contains(&self, user: UserId) -> bool {
+        self.allowed_users.contains(&user)
+    }
 }
