@@ -1,5 +1,5 @@
 mod markdown;
-mod whitelist;
+pub mod whitelist;
 
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
@@ -18,6 +18,7 @@ use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
@@ -56,6 +57,7 @@ pub async fn run_bot(
     client: &Client,
     dispatcher: Arc<DownloadDispatcher>,
     message_handle_timeout: Duration,
+    whitelist: Arc<Mutex<whitelist::Whitelist>>,
 ) -> Result<()> {
     while let Some(update) = client.next_update().await.context("Getting next update")? {
         let Update::NewMessage(message) = update else {
@@ -67,10 +69,11 @@ pub async fn run_bot(
 
         let dispatcher = dispatcher.clone();
         let client = client.clone();
+        let whitelist = whitelist.clone();
         tokio::spawn(async move {
             let task = timeout(
                 message_handle_timeout,
-                handle_message(message, client, dispatcher),
+                handle_message(message, client, dispatcher, whitelist),
             );
 
             if let Ok(handle_result) = task.await {
@@ -257,6 +260,7 @@ async fn handle_message(
     message: Message,
     client: Client,
     dispatcher: Arc<DownloadDispatcher>,
+    whitelist: Arc<Mutex<whitelist::Whitelist>>,
 ) -> Result<()> {
     let chat = message.chat();
     debug!("Got message from {:?}", chat.id());
@@ -264,7 +268,7 @@ async fn handle_message(
         info!("Ignoring message not from private chat ({:?})", chat);
     }
 
-    if chat.id() != SUPERUSER {
+    if chat.id() != SUPERUSER && !whitelist.lock().await.contains(chat.id()) {
         info!("Ignoring message from non-superuser ({:?})", chat);
 
         message

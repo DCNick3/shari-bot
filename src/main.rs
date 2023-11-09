@@ -1,3 +1,4 @@
+use crate::bot::whitelist::Whitelist;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::tiktok::TikTokDownloader;
 use crate::downloader::youtube::YoutubeDownloader;
@@ -6,9 +7,10 @@ use anyhow::{bail, Result};
 use futures::{StreamExt, TryStreamExt};
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 mod bot;
@@ -200,6 +202,10 @@ async fn main() -> Result<()> {
 
     let client = connect_and_login(&config.telegram).await?;
 
+    let mut whitelist = Whitelist::new_empty(PathBuf::from(config.data_storages.whitelist_file));
+    whitelist.load_from_disk();
+    let whitelist = Arc::new(Mutex::new(whitelist));
+
     let dispatcher = DownloadDispatcher::new(vec![
         Arc::new(YoutubeDownloader::new()),
         Arc::new(TikTokDownloader::new()),
@@ -210,7 +216,7 @@ async fn main() -> Result<()> {
         _ = tokio::signal::ctrl_c() => {
             info!("Got SIGINT; quitting early gracefully");
         }
-        r = bot::run_bot(&client, dispatcher, Duration::from_secs(60)) => {
+        r = bot::run_bot(&client, dispatcher, Duration::from_secs(60), whitelist) => {
             match r {
                 Ok(_) => info!("Got disconnected from Telegram gracefully"),
                 Err(e) => error!("Error during update handling: {}", e),
