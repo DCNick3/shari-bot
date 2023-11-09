@@ -4,6 +4,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub telegram: Telegram,
+    pub data_storages: Data,
 }
 
 impl Config {
@@ -62,4 +63,8 @@ pub enum TelegramAccount {
     User {
         phone: String,
     },
+}
+#[derive(Deserialize, Clone, Debug)]
+pub struct Data {
+    pub whitelist_file: String,
 }
