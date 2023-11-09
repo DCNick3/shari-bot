@@ -54,24 +54,28 @@ impl Whitelist {
     /// - If the set did not previously contain this value, `true` is returned,
     ///     updates are stored in the disk.
     /// - If the set already contained this value, `false` is returned.
-    pub fn insert(&mut self, user: UserId) -> bool {
+    pub async fn insert(&mut self, user: UserId) -> Result<bool> {
         let updated = self.allowed_users.insert(user);
         if updated {
-            self.store_into_disk();
+            self.store_into_disk()
+                .await
+                .context("Storing state on disk")?;
         }
-        updated
+        Ok(updated)
     }
 
     /// Remove a user from the whitelist.
     ///
     /// Returns whether the user was removed. If yes, the list is propagated
     /// on disk.
-    pub fn remove(&mut self, user: UserId) -> bool {
+    pub async fn remove(&mut self, user: UserId) -> Result<bool> {
         let updated = self.allowed_users.remove(&user);
         if updated {
-            self.store_into_disk();
+            self.store_into_disk()
+                .await
+                .context("Storing state on disk")?;
         }
-        updated
+        Ok(updated)
     }
 
     /// Returns true if the list contains a user.
