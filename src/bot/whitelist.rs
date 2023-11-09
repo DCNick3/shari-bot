@@ -21,20 +21,21 @@ impl Whitelist {
         }
     }
 
-    /// Loads state from the storage, overriding everything. Typically should be used for
-    /// startup initialization.
-    pub async fn load_from_disk(&mut self) -> Result<()> {
+    /// Loads state from the storage, overriding everything.
+    pub async fn new_from_disk(path: PathBuf) -> Result<Self> {
+        let mut me = Self::new_empty(path);
         let mut data = Vec::new();
-        let mut file = OpenOptions::new()
-            .read(true)
-            .create(true)
-            .open(self.storage_path.as_path())
-            .await
-            .context("Opening file")?;
-        file.read_to_end(&mut data).await.context("Reading file")?;
-        self.allowed_users =
-            serde_json::from_slice::<HashSet<UserId>>(&data[..]).context("Deserializing data")?;
-        Ok(())
+        if me.storage_path.is_file() {
+            let mut file = OpenOptions::new()
+                .read(true)
+                .open(me.storage_path.as_path())
+                .await
+                .context("Opening file")?;
+            file.read_to_end(&mut data).await.context("Reading file")?;
+            me.allowed_users = serde_json::from_slice::<HashSet<UserId>>(&data[..])
+                .context("Deserializing data")?;
+        }
+        Ok(me)
     }
 
     async fn store_into_disk(&mut self) -> Result<()> {

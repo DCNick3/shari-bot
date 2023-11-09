@@ -26,7 +26,6 @@ use url::Url;
 
 type UserId = i64;
 
-// 341860207
 const SUPERUSER: UserId = 379529027;
 
 #[derive(Clone)]
