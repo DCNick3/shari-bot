@@ -1,13 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tokio::fs::File;
+use tokio::fs::{create_dir_all, File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::UserId;
 
 /// Keeps track of allowed users storing updates on the disk.
 pub struct Whitelist {
+    /// Path to the file to store state into.
     storage_path: PathBuf,
     allowed_users: HashSet<UserId>,
 }
@@ -24,12 +25,13 @@ impl Whitelist {
     /// startup initialization.
     pub async fn load_from_disk(&mut self) -> Result<()> {
         let mut data = Vec::new();
-        File::open(self.storage_path.as_path())
+        let mut file = OpenOptions::new()
+            .read(true)
+            .create(true)
+            .open(self.storage_path.as_path())
             .await
-            .context("Opening file")?
-            .read_to_end(&mut data)
-            .await
-            .context("Reading file")?;
+            .context("Opening file")?;
+        file.read_to_end(&mut data).await.context("Reading file")?;
         self.allowed_users =
             serde_json::from_slice::<HashSet<UserId>>(&data[..]).context("Deserializing data")?;
         Ok(())
@@ -38,10 +40,13 @@ impl Whitelist {
     async fn store_into_disk(&mut self) -> Result<()> {
         let list_serialized =
             serde_json::to_vec(&self.allowed_users).context("Serializing data")?;
-        File::open(self.storage_path.as_path())
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(self.storage_path.as_path())
             .await
-            .context("Opening file")?
-            .write_all(&list_serialized[..])
+            .context("Opening file")?;
+        file.write_all(&list_serialized[..])
             .await
             .context("Writing to file")?;
         Ok(())
