@@ -202,10 +202,8 @@ async fn main() -> Result<()> {
 
     let client = connect_and_login(&config.telegram).await?;
 
-    let mut whitelist = Whitelist::new_empty(PathBuf::from(config.data_storages.whitelist_file));
-    // whitelist.load_from_disk().await?;
-    whitelist.insert(1234).await?;
-    whitelist.insert(1235).await?;
+    let whitelist =
+        Whitelist::new_from_disk(PathBuf::from(config.data_storages.whitelist_file)).await?;
     let whitelist = Arc::new(Mutex::new(whitelist));
 
     let dispatcher = DownloadDispatcher::new(vec![
