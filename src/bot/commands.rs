@@ -1,9 +1,11 @@
-use crate::bot::UserId;
+use crate::bot::{markdown, UserId};
 use anyhow::Context;
 use grammers_client::types::Message;
 use grammers_client::InputMessage;
 use grammers_tl_types::enums::MessageEntity;
 use grammers_tl_types::types::MessageEntityBotCommand;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 #[derive(Debug)]
@@ -106,6 +108,7 @@ impl SuperuserCommand {
 pub async fn handle_command(
     command: &MessageEntityBotCommand,
     message: &Message,
+    whitelist: Arc<Mutex<crate::bot::whitelist::Whitelist>>,
 ) -> anyhow::Result<()> {
     let command = match SuperuserCommand::parse(command, message) {
         Ok(c) => c,
@@ -115,11 +118,13 @@ pub async fn handle_command(
                     "I don't know such command, /help might help",
                 ))
                 .await?;
+            return Ok(());
         }
         Err(CommandParseError::NoArgumentsProvided) => {
             message
                 .reply(InputMessage::text("Missing argument(-s), /help might help"))
                 .await?;
+            return Ok(());
         }
         Err(CommandParseError::IncorrectArguments) => {
             message
@@ -127,19 +132,60 @@ pub async fn handle_command(
                     "I expected other arguments, /help might help",
                 ))
                 .await?;
+            return Ok(());
         }
         Err(CommandParseError::ParsingError(e)) => return Err(e.context("Parsing command")),
     };
 
     match command {
         SuperuserCommand::WhitelistInsert(user) => {
-            info!("Adding into whitelist user {:?}", user);
+            info!(
+                "Adding into whitelist user (name: {}, id: {})",
+                user.text, user.user_id
+            );
+            let added = whitelist.lock().await.insert(user.user_id).await?;
+            if added {
+                message
+                    .reply(InputMessage::text(
+                        "Added the user successfully! ✨ Now they can use this bot ✨",
+                    ))
+                    .await?;
+            } else {
+                message
+                    .reply(InputMessage::text(
+                        "✨ I already know this person! (or bot 🤔) ✨",
+                    ))
+                    .await?;
+            }
         }
         SuperuserCommand::WhitelistRemove(user) => {
-            info!("Removing from whitelist user {:?}", user);
+            info!(
+                "Removing from whitelist user (name: {}, id: {})",
+                user.text, user.user_id
+            );
+            let removed = whitelist.lock().await.remove(user.user_id).await?;
+            if removed {
+                message
+                    .reply(InputMessage::text(
+                        "Removed the user successfully.. We're not friends anymore 😭😭😭 ",
+                    ))
+                    .await?;
+            } else {
+                message
+                    .reply(InputMessage::text("Who's dat? Idk them, do you? 👊🤨 "))
+                    .await?;
+            }
         }
         SuperuserCommand::WhitelistGet => {
             debug!("Showing whitelist");
+            let whitelist = whitelist.lock().await;
+            let user_ids = whitelist.users();
+            let mut users_string = String::with_capacity(user_ids.len());
+            for user_id in user_ids {
+                users_string.push_str(&format!("{}\n", markdown::user_mention(*user_id, "")))
+            }
+            let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\n{users_string}",);
+            message.reply(InputMessage::markdown(&reply_md)).await?;
         }
     }
     Ok(())
