@@ -1,7 +1,8 @@
-use crate::bot::{markdown, UserId};
+use crate::bot::markdown;
 use anyhow::Context;
-use grammers_client::types::Message;
-use grammers_client::InputMessage;
+use grammers_client::client::auth::InvocationError;
+use grammers_client::types::{Chat, Message, User};
+use grammers_client::{Client, InputMessage};
 use grammers_tl_types::enums::MessageEntity;
 use grammers_tl_types::types::MessageEntityBotCommand;
 use std::sync::Arc;
@@ -9,10 +10,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 #[derive(Debug)]
-struct Alias {
-    text: String,
-    user_id: UserId,
-}
+struct Alias(String);
 
 impl Alias {
     /// If `None`, then the argument is not a user mention
@@ -24,7 +22,7 @@ impl Alias {
             .into_iter()
             .flatten()
             .filter_map(|e| match e {
-                MessageEntity::MentionName(m) => Some(m),
+                MessageEntity::Mention(m) => Some(m),
                 _ => None,
             });
         let result = mentions.find_map(|mention| {
@@ -34,10 +32,7 @@ impl Alias {
                 return None;
             };
             if name == arg {
-                Some(Alias {
-                    text: name,
-                    user_id: mention.user_id,
-                })
+                Some(Alias(name))
             } else {
                 None
             }
@@ -47,6 +42,20 @@ impl Alias {
             debug!("Did not match '{arg}' with any aliases {mentions:?}");
         };
         result
+    }
+
+    async fn resolve(&self, client: &Client) -> anyhow::Result<Option<User>> {
+        let id = match client.resolve_username(&self.0).await {
+            Ok(id) => id,
+            Err(InvocationError::Rpc(r)) if r.code == 400 => None,
+            Err(e) => return Err(e).context("Requesting username resolve"),
+        };
+        let user_id = id.map(|chat| match chat {
+            Chat::User(id) => Some(id),
+            Chat::Group(_) => None,
+            Chat::Channel(_) => None,
+        });
+        Ok(user_id.flatten())
     }
 }
 
@@ -111,6 +120,7 @@ impl SuperuserCommand {
 }
 
 pub async fn handle_command(
+    client: &Client,
     command: &MessageEntityBotCommand,
     message: &Message,
     whitelist: Arc<Mutex<crate::bot::whitelist::Whitelist>>,
@@ -143,12 +153,22 @@ pub async fn handle_command(
     };
 
     match command {
-        SuperuserCommand::WhitelistInsert(user) => {
+        SuperuserCommand::WhitelistInsert(alias) => {
+            let Some(user) = alias.resolve(client).await? else {
+                info!("Got username, but couldn't resolve: {}", alias.0);
+                message
+                    .reply(InputMessage::text(
+                        "All telegram doesn't know this person 🔍\nDid you type the name correctly?",
+                    ))
+                    .await?;
+                return Ok(());
+            };
             info!(
-                "Adding into whitelist user (name: {}, id: {})",
-                user.text, user.user_id
+                "Adding into whitelist user (name: {:?}, id: {})",
+                user.username(),
+                user.id()
             );
-            let added = whitelist.lock().await.insert(user.user_id).await?;
+            let added = whitelist.lock().await.insert(user.id()).await?;
             if added {
                 message
                     .reply(InputMessage::text(
@@ -163,12 +183,22 @@ pub async fn handle_command(
                     .await?;
             }
         }
-        SuperuserCommand::WhitelistRemove(user) => {
+        SuperuserCommand::WhitelistRemove(alias) => {
+            let Some(user) = alias.resolve(client).await? else {
+                info!("Got username, but couldn't resolve: {}", alias.0);
+                message
+                    .reply(InputMessage::text(
+                        "All telegram doesn't know this person 🔍\nDid you type the name correctly?",
+                    ))
+                    .await?;
+                return Ok(());
+            };
             info!(
-                "Removing from whitelist user (name: {}, id: {})",
-                user.text, user.user_id
+                "Removing from whitelist user (name: {:?}, id: {})",
+                user.username(),
+                user.id()
             );
-            let removed = whitelist.lock().await.remove(user.user_id).await?;
+            let removed = whitelist.lock().await.remove(user.id()).await?;
             if removed {
                 message
                     .reply(InputMessage::text(
