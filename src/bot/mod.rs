@@ -312,6 +312,7 @@ async fn handle_message(
         }) {
             debug!("Found command");
             handle_command(&client, command, &message, whitelist).await?;
+            return Ok(());
         } else {
             debug!("No commands were found");
         };
