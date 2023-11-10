@@ -1,10 +1,12 @@
 use crate::bot::UserId;
 use anyhow::Context;
 use grammers_client::types::Message;
+use grammers_client::InputMessage;
 use grammers_tl_types::enums::MessageEntity;
 use grammers_tl_types::types::MessageEntityBotCommand;
-use tracing::warn;
+use tracing::{debug, info, warn};
 
+#[derive(Debug)]
 struct Alias {
     text: String,
     user_id: UserId,
@@ -105,5 +107,40 @@ pub async fn handle_command(
     command: &MessageEntityBotCommand,
     message: &Message,
 ) -> anyhow::Result<()> {
+    let command = match SuperuserCommand::parse(command, message) {
+        Ok(c) => c,
+        Err(CommandParseError::UnknownCommand) => {
+            message
+                .reply(InputMessage::text(
+                    "I don't know such command, /help might help",
+                ))
+                .await?;
+        }
+        Err(CommandParseError::NoArgumentsProvided) => {
+            message
+                .reply(InputMessage::text("Missing argument(-s), /help might help"))
+                .await?;
+        }
+        Err(CommandParseError::IncorrectArguments) => {
+            message
+                .reply(InputMessage::text(
+                    "I expected other arguments, /help might help",
+                ))
+                .await?;
+        }
+        Err(CommandParseError::ParsingError(e)) => return Err(e.context("Parsing command")),
+    };
+
+    match command {
+        SuperuserCommand::WhitelistInsert(user) => {
+            info!("Adding into whitelist user {:?}", user);
+        }
+        SuperuserCommand::WhitelistRemove(user) => {
+            info!("Removing from whitelist user {:?}", user);
+        }
+        SuperuserCommand::WhitelistGet => {
+            debug!("Showing whitelist");
+        }
+    }
     Ok(())
 }
