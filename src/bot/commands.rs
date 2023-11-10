@@ -15,6 +15,7 @@ struct Alias(String);
 impl Alias {
     /// If `None`, then the argument is not a user mention
     fn parse(message: &Message, arg: &str) -> Option<Self> {
+        let arg = arg.trim_start_matches('@');
         let text = message.text();
         let text = text.encode_utf16().collect::<Vec<_>>();
         let mut mentions = message
