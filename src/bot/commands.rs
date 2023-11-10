@@ -15,31 +15,30 @@ struct Alias(String);
 impl Alias {
     /// If `None`, then the argument is not a user mention
     fn parse(message: &Message, arg: &str) -> Option<Self> {
-        let arg = arg.trim_start_matches('@');
         let text = message.text();
         let text = text.encode_utf16().collect::<Vec<_>>();
-        let mut mentions = message
+        let mentions: Vec<_> = message
             .fmt_entities()
             .into_iter()
             .flatten()
             .filter_map(|e| match e {
                 MessageEntity::Mention(m) => Some(m),
                 _ => None,
-            });
-        let result = mentions.find_map(|mention| {
+            })
+            .collect();
+        let result = mentions.iter().find_map(|mention| {
             let name = &text[mention.offset as usize..(mention.offset + mention.length) as usize];
             let Ok(name) = String::from_utf16(name) else {
                 warn!("Could not parse mention text form {:?}", name);
                 return None;
             };
             if name == arg {
-                Some(Alias(name))
+                Some(Alias(name.trim_start_matches('@').to_string()))
             } else {
                 None
             }
         });
         if result.is_none() {
-            let mentions: Vec<_> = mentions.collect();
             debug!("Did not match '{arg}' with any aliases {mentions:?}");
         };
         result
