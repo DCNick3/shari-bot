@@ -1,10 +1,13 @@
+use crate::bot::UserId;
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::collections::HashSet;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub telegram: Telegram,
     pub data_storages: Data,
+    pub superusers: HashSet<UserId>,
 }
 
 impl Config {
