@@ -216,8 +216,14 @@ pub async fn handle_command(
             let whitelist = whitelist.lock().await;
             let user_ids = whitelist.users();
             let mut users_string = String::with_capacity(user_ids.len());
-            for user_id in user_ids {
-                users_string.push_str(&format!("{}\n", markdown::user_mention(*user_id, "")))
+            for (i, user_id) in user_ids.iter().enumerate() {
+                users_string.push_str(&format!(
+                    "{}\n",
+                    markdown::user_mention(
+                        *user_id,
+                        &format!("beeestieee {i} 😎 (the best one!!!)")
+                    )
+                ));
             }
             let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\n{users_string}",);
             message.reply(InputMessage::markdown(&reply_md)).await?;
