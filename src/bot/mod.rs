@@ -15,6 +15,7 @@ use grammers_client::{
 };
 use grammers_tl_types::enums;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
@@ -26,10 +27,7 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 use url::Url;
 
-type UserId = i64;
-
-// 379529027
-const SUPERUSER: UserId = 341860207;
+pub type UserId = i64;
 
 #[derive(Clone)]
 pub enum UploadStatus {
@@ -60,7 +58,9 @@ pub async fn run_bot(
     dispatcher: Arc<DownloadDispatcher>,
     message_handle_timeout: Duration,
     whitelist: Arc<Mutex<whitelist::Whitelist>>,
+    superusers: HashSet<UserId>,
 ) -> Result<()> {
+    let superusers = Arc::new(superusers);
     while let Some(update) = client.next_update().await.context("Getting next update")? {
         let Update::NewMessage(message) = update else {
             continue;
@@ -72,10 +72,11 @@ pub async fn run_bot(
         let dispatcher = dispatcher.clone();
         let client = client.clone();
         let whitelist = whitelist.clone();
+        let superusers = superusers.clone();
         tokio::spawn(async move {
             let task = timeout(
                 message_handle_timeout,
-                handle_message(message, client, dispatcher, whitelist),
+                handle_message(message, client, dispatcher, whitelist, superusers),
             );
 
             if let Ok(handle_result) = task.await {
@@ -274,6 +275,7 @@ async fn handle_message(
     client: Client,
     dispatcher: Arc<DownloadDispatcher>,
     whitelist: Arc<Mutex<whitelist::Whitelist>>,
+    superusers: Arc<HashSet<UserId>>,
 ) -> Result<()> {
     let chat = message.chat();
     debug!("Got message from {:?}", chat.id());
@@ -281,7 +283,7 @@ async fn handle_message(
         info!("Ignoring message not from private chat ({:?})", chat);
     }
 
-    if chat.id() != SUPERUSER && !whitelist.lock().await.contains(chat.id()) {
+    if !superusers.contains(&chat.id()) && !whitelist.lock().await.contains(chat.id()) {
         info!("Ignoring message from non-superuser ({:?})", chat);
 
         message
@@ -305,7 +307,7 @@ async fn handle_message(
 
     let text = text.encode_utf16().collect::<Vec<_>>();
 
-    if chat.id() == SUPERUSER {
+    if superusers.contains(&chat.id()) {
         if let Some(command) = find_message_entity(&message, |e| match e {
             enums::MessageEntity::BotCommand(command) => Some(command),
             _ => None,
