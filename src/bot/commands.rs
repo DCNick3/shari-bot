@@ -217,15 +217,17 @@ pub async fn handle_command(
             let user_ids = whitelist.users();
             let mut users_string = String::with_capacity(user_ids.len());
             for (i, user_id) in user_ids.iter().enumerate() {
+                // apparently won't link properly if user did not interact with the bot:
+                // https://stackoverflow.com/questions/40048452/telegram-bot-how-to-mention-user-by-its-id-not-its-username#comment108737106_46310679
                 users_string.push_str(&format!(
-                    "{}\n",
+                    "{}\\\n",
                     markdown::user_mention(
                         *user_id,
-                        &format!("beeestieee {i} 😎 (the best one!!!)")
+                        &format!("beeestieee {i} 😎 (the best one!!!)\n")
                     )
                 ));
             }
-            let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\n{users_string}",);
+            let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);
             message.reply(InputMessage::markdown(&reply_md)).await?;
         }
     }
