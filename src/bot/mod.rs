@@ -1,6 +1,8 @@
+mod commands;
 mod markdown;
 pub mod whitelist;
 
+use crate::bot::commands::handle_command;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
 use anyhow::{anyhow, Context, Result};
