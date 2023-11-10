@@ -28,7 +28,8 @@ use url::Url;
 
 type UserId = i64;
 
-const SUPERUSER: UserId = 379529027;
+// 379529027
+const SUPERUSER: UserId = 341860207;
 
 #[derive(Clone)]
 pub enum UploadStatus {
@@ -304,14 +305,17 @@ async fn handle_message(
 
     let text = text.encode_utf16().collect::<Vec<_>>();
 
-    if let Some(command) = find_message_entity(&message, |e| match e {
-        enums::MessageEntity::BotCommand(command) => Some(command),
-        _ => None,
-    }) {
-        handle_command(command, &message, whitelist).await?;
-    } else {
-        debug!("No commands were found");
-    };
+    if chat.id() == SUPERUSER {
+        if let Some(command) = find_message_entity(&message, |e| match e {
+            enums::MessageEntity::BotCommand(command) => Some(command),
+            _ => None,
+        }) {
+            debug!("Found command");
+            handle_command(command, &message, whitelist).await?;
+        } else {
+            debug!("No commands were found");
+        };
+    }
 
     let Some(url) = find_message_entity(&message, |e| match e {
         enums::MessageEntity::Url(url) => Some(url),

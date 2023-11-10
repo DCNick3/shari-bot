@@ -27,7 +27,7 @@ impl Alias {
                 MessageEntity::MentionName(m) => Some(m),
                 _ => None,
             });
-        mentions.find_map(|mention| {
+        let result = mentions.find_map(|mention| {
             let name = &text[mention.offset as usize..(mention.offset + mention.length) as usize];
             let Ok(name) = String::from_utf16(name) else {
                 warn!("Could not parse mention text form {:?}", name);
@@ -41,7 +41,12 @@ impl Alias {
             } else {
                 None
             }
-        })
+        });
+        if result.is_none() {
+            let mentions: Vec<_> = mentions.collect();
+            debug!("Did not match '{arg}' with any aliases {mentions:?}");
+        };
+        result
     }
 }
 
