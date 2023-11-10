@@ -1,7 +1,7 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tokio::fs::{create_dir_all, File, OpenOptions};
+use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::UserId;
@@ -87,5 +87,9 @@ impl Whitelist {
     /// Returns true if the list contains a user.
     pub fn contains(&self, user: UserId) -> bool {
         self.allowed_users.contains(&user)
+    }
+
+    pub fn users(&self) -> &HashSet<UserId> {
+        &self.allowed_users
     }
 }

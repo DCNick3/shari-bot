@@ -308,7 +308,7 @@ async fn handle_message(
         enums::MessageEntity::BotCommand(command) => Some(command),
         _ => None,
     }) {
-        handle_command(command, &message).await?;
+        handle_command(command, &message, whitelist).await?;
     } else {
         debug!("No commands were found");
     };
