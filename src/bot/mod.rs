@@ -254,6 +254,17 @@ async fn upload_with_status_updates(
     Ok(())
 }
 
+fn find_message_entity<E, F>(message: &Message, finder: F) -> Option<&E>
+where
+    F: for<'a> FnMut(&'a enums::MessageEntity) -> Option<&'a E>,
+{
+    message
+        .fmt_entities()
+        .into_iter()
+        .flatten()
+        .find_map(finder)
+}
+
 #[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()))]
 async fn handle_message(
     message: Message,
@@ -291,15 +302,19 @@ async fn handle_message(
 
     let text = text.encode_utf16().collect::<Vec<_>>();
 
-    let Some(url) = message
-        .fmt_entities()
-        .into_iter()
-        .flatten()
-        .find_map(|e| match e {
-            enums::MessageEntity::Url(url) => Some(url),
-            _ => None,
-        })
-    else {
+    if let Some(command) = find_message_entity(&message, |e| match e {
+        enums::MessageEntity::BotCommand(command) => Some(command),
+        _ => None,
+    }) {
+        handle_command(command, &message).await?;
+    } else {
+        debug!("No commands were found");
+    };
+
+    let Some(url) = find_message_entity(&message, |e| match e {
+        enums::MessageEntity::Url(url) => Some(url),
+        _ => None,
+    }) else {
         message
             .reply(InputMessage::text(
                 "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
