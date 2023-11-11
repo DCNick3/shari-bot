@@ -5,6 +5,7 @@ use grammers_client::types::{Chat, Message, User};
 use grammers_client::{Client, InputMessage};
 use grammers_tl_types::enums::MessageEntity;
 use grammers_tl_types::types::MessageEntityBotCommand;
+use indoc::indoc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -63,6 +64,7 @@ enum SuperuserCommand {
     WhitelistInsert(Alias),
     WhitelistRemove(Alias),
     WhitelistGet,
+    Help,
 }
 
 #[derive(Debug)]
@@ -114,6 +116,7 @@ impl SuperuserCommand {
                     Alias::parse(message, arg).ok_or(CommandParseError::IncorrectArguments)?;
                 Ok(Self::WhitelistRemove(alias))
             }
+            "/help" => Ok(Self::Help),
             _ => Err(CommandParseError::UnknownCommand),
         }
     }
@@ -229,6 +232,18 @@ pub async fn handle_command(
             }
             let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);
             message.reply(InputMessage::markdown(&reply_md)).await?;
+        }
+        SuperuserCommand::Help => {
+            message
+                .reply(InputMessage::text(indoc!(
+                    r#"
+                /whitelist - list whitelist
+                /whitelist_add @username - add user to the whitelist 
+                /whitelist_remove @username - remove user from the whitelist 
+                /help - show this message
+                "#
+                )))
+                .await?;
         }
     }
     Ok(())

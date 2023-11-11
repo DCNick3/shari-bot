@@ -48,6 +48,7 @@ anyhow = "1.0.58"
 opentelemetry = { version = "0.20.0", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.13.0"
 tracing-opentelemetry = "0.21.0"
+indoc = "2.0.4"
 
 [profile.ship]
 inherits = "release"
