@@ -3,46 +3,19 @@ use anyhow::Context;
 use grammers_client::client::auth::InvocationError;
 use grammers_client::types::{Chat, Message, User};
 use grammers_client::{Client, InputMessage};
-use grammers_tl_types::enums::MessageEntity;
 use grammers_tl_types::types::MessageEntityBotCommand;
 use indoc::indoc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 #[derive(Debug)]
 struct Alias(String);
 
 impl Alias {
     /// If `None`, then the argument is not a user mention
-    fn parse(message: &Message, arg: &str) -> Option<Self> {
-        let text = message.text();
-        let text = text.encode_utf16().collect::<Vec<_>>();
-        let mentions: Vec<_> = message
-            .fmt_entities()
-            .into_iter()
-            .flatten()
-            .filter_map(|e| match e {
-                MessageEntity::Mention(m) => Some(m),
-                _ => None,
-            })
-            .collect();
-        let result = mentions.iter().find_map(|mention| {
-            let name = &text[mention.offset as usize..(mention.offset + mention.length) as usize];
-            let Ok(name) = String::from_utf16(name) else {
-                warn!("Could not parse mention text form {:?}", name);
-                return None;
-            };
-            if name == arg {
-                Some(Alias(name.trim_start_matches('@').to_string()))
-            } else {
-                None
-            }
-        });
-        if result.is_none() {
-            debug!("Did not match '{arg}' with any aliases {mentions:?}");
-        };
-        result
+    fn parse(arg: &str) -> Self {
+        Alias(arg.trim_start_matches('@').to_string())
     }
 
     async fn resolve(&self, client: &Client) -> anyhow::Result<Option<User>> {
@@ -71,6 +44,7 @@ enum SuperuserCommand {
 enum CommandParseError {
     UnknownCommand,
     NoArgumentsProvided,
+    #[allow(dead_code)]
     IncorrectArguments,
     ParsingError(anyhow::Error),
 }
@@ -106,14 +80,12 @@ impl SuperuserCommand {
             "/whitelist" | "/whitelist_get" => Ok(Self::WhitelistGet),
             "/whitelist_add" => {
                 let arg = args.next().ok_or(CommandParseError::NoArgumentsProvided)?;
-                let alias =
-                    Alias::parse(message, arg).ok_or(CommandParseError::IncorrectArguments)?;
+                let alias = Alias::parse(arg);
                 Ok(Self::WhitelistInsert(alias))
             }
             "/whitelist_remove" => {
                 let arg = args.next().ok_or(CommandParseError::NoArgumentsProvided)?;
-                let alias =
-                    Alias::parse(message, arg).ok_or(CommandParseError::IncorrectArguments)?;
+                let alias = Alias::parse(arg);
                 Ok(Self::WhitelistRemove(alias))
             }
             "/help" => Ok(Self::Help),
