@@ -15,7 +15,7 @@ use grammers_client::{
 };
 use grammers_tl_types::enums;
 use indoc::indoc;
-use snafu::{FromString, ResultExt};
+use snafu::{FromString, ResultExt, Snafu};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -210,6 +210,18 @@ impl StatusMessageState {
     }
 }
 
+#[derive(Debug, Snafu)]
+enum UploadError {
+    Timeout,
+    Other { inner: Whatever },
+}
+
+impl From<Whatever> for UploadError {
+    fn from(value: Whatever) -> Self {
+        UploadError::Other { inner: value }
+    }
+}
+
 #[instrument(skip_all, fields(url = %url, downloader_name = downloader.link_text()))]
 async fn upload_with_status_updates(
     client: &Client,
@@ -218,7 +230,7 @@ async fn upload_with_status_updates(
     url: Url,
     downloader: Arc<dyn Downloader>,
     video_handling_timeout: Duration,
-) -> Result<(), Whatever> {
+) -> Result<(), UploadError> {
     let (notifier, notification_rx) = Notifier::make();
 
     let upload_fut = upload_video(&client, downloader, url, initial_message, notifier)
@@ -250,22 +262,12 @@ async fn upload_with_status_updates(
     .instrument(info_span!("update_status_message"))
     .fuse();
     select! {
-        err = status_update_fut => return Err(err.unwrap_err()),
+        err = status_update_fut => return Err(err.unwrap_err().into()),
         r = upload_fut => {
             debug!("Upload future finished");
             match r {
-                Ok(r) => return r,
-                Err(_) => {
-                    warn!("Took too long to handle a message, stopped video handling");
-                    status_message
-                        .edit(InputMessage::text(indoc!(
-                            r#"Took too long to download & upload the video, maybe the file is
-                            too large or the bot is under heavy load."#,
-                        )))
-                        .await
-                        .whatever_context("Editing message")?;
-                    return Ok(());
-                }
+                Ok(r) => return Ok(r?),
+                Err(_) => return Err(UploadError::Timeout),
             }
         }
     }
@@ -383,7 +385,14 @@ async fn handle_message(
             info!("Successfully sent video!");
             Cow::Borrowed("did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
         }
-        Err(e) => {
+        Err(UploadError::Timeout) => {
+            warn!("Took too long to handle a message, stopped video handling");
+            Cow::Borrowed(indoc!(
+                r#"Took too long to download & upload the video, maybe the file is
+                too large or the bot is under heavy load."#,
+            ))
+        }
+        Err(UploadError::Other { inner: e }) => {
             error!("Error occurred while sending the video: {:?}", e);
             // TODO: make the error a code block
             // the markdown parser seems a bit buggy, so can't really use it here.
