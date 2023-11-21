@@ -1,10 +1,11 @@
 use crate::bot::markdown;
+use crate::whatever::Whatever;
 use grammers_client::client::auth::InvocationError;
 use grammers_client::types::{Chat, Message, User};
 use grammers_client::{Client, InputMessage};
 use grammers_tl_types::types::MessageEntityBotCommand;
 use indoc::indoc;
-use snafu::{OptionExt, ResultExt, Snafu, Whatever};
+use snafu::{OptionExt, ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info};

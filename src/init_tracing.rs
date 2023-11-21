@@ -1,6 +1,7 @@
 // 1. Run `cargo add opentelemetry opentelemetry-otlp tracing-opentelemetry tracing-subscriber --features=opentelemetry/rt-tokio,tracing-subscriber/env-filter`
 // 2. add `init_tracing::init_tracing().whatever_context("Setting up the opentelemetry exporter")?;` to main.rs
 
+use crate::whatever::Whatever;
 use opentelemetry::propagation::TextMapPropagator;
 use opentelemetry::sdk::propagation::{
     BaggagePropagator, TextMapCompositePropagator, TraceContextPropagator,
@@ -9,7 +10,7 @@ use opentelemetry::sdk::resource::{EnvResourceDetector, SdkProvidedResourceDetec
 use opentelemetry::sdk::{trace as sdktrace, Resource};
 use opentelemetry::trace::TraceError;
 use opentelemetry_otlp::{HasExportConfig, WithExportConfig};
-use snafu::{ResultExt, Whatever};
+use snafu::ResultExt;
 use std::panic::PanicInfo;
 use std::time::Duration;
 use tracing_subscriber::fmt::format::FmtSpan;

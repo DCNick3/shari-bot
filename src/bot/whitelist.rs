@@ -1,4 +1,5 @@
-use snafu::{ResultExt, Whatever};
+use crate::whatever::Whatever;
+use snafu::ResultExt;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::fs::OpenOptions;
