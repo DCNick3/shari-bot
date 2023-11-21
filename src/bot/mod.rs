@@ -57,7 +57,7 @@ impl Notifier {
 pub async fn run_bot(
     client: &Client,
     dispatcher: Arc<DownloadDispatcher>,
-    message_handle_timeout: Duration,
+    video_handling_timeout: Duration,
     whitelist: Arc<Mutex<whitelist::Whitelist>>,
     superusers: HashSet<UserId>,
 ) -> Result<()> {
@@ -75,26 +75,21 @@ pub async fn run_bot(
         let whitelist = whitelist.clone();
         let superusers = superusers.clone();
         tokio::spawn(async move {
-            let task = timeout(
-                message_handle_timeout,
-                handle_message(message, client, dispatcher, whitelist, superusers),
-            );
+            let handle_result = handle_message(
+                message,
+                client,
+                dispatcher,
+                whitelist,
+                superusers,
+                video_handling_timeout,
+            )
+            .await;
 
-            if let Ok(handle_result) = task.await {
-                match handle_result {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Error occurred while handling message: {:?}", e);
-                    }
+            match handle_result {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Error occurred while handling message: {:?}", e);
                 }
-            } else {
-                message
-                    .reply(InputMessage::text(indoc!(
-                        r#"Took too long to download & upload the video, maybe the file is
-                        too large or the bot is under heavy load."#,
-                    )))
-                    .await?;
-                warn!("Took too long to handle a message, cancelled the task");
             }
         });
     }
@@ -223,12 +218,14 @@ async fn upload_with_status_updates(
     status_message: &Message,
     url: Url,
     downloader: Arc<dyn Downloader>,
+    video_handling_timeout: Duration,
 ) -> Result<()> {
     let (notifier, notification_rx) = Notifier::make();
 
     let upload_fut = upload_video(&client, downloader, url, initial_message, notifier)
         .fuse()
         .instrument(info_span!("upload_video"));
+    let upload_fut = timeout(video_handling_timeout, upload_fut);
 
     let mut interval = tokio::time::interval(Duration::from_secs(1));
 
@@ -253,16 +250,25 @@ async fn upload_with_status_updates(
     }
     .instrument(info_span!("update_status_message"))
     .fuse();
-
     select! {
         err = status_update_fut => return Err(err.unwrap_err()),
         r = upload_fut => {
             debug!("Upload future finished");
-            r?;
+            match r {
+                Ok(r) => return r,
+                Err(_) => {
+                    warn!("Took too long to handle a message, stopped video handling");
+                    status_message
+                        .edit(InputMessage::text(indoc!(
+                            r#"Took too long to download & upload the video, maybe the file is
+                            too large or the bot is under heavy load."#,
+                        )))
+                        .await?;
+                    return Ok(());
+                }
+            }
         }
     }
-
-    Ok(())
 }
 
 fn find_message_entity<E, F>(message: &Message, finder: F) -> Option<&E>
@@ -283,6 +289,7 @@ async fn handle_message(
     dispatcher: Arc<DownloadDispatcher>,
     whitelist: Arc<Mutex<whitelist::Whitelist>>,
     superusers: Arc<HashSet<UserId>>,
+    video_handling_timeout: Duration,
 ) -> Result<()> {
     let chat = message.chat();
     debug!("Got message from {:?}", chat.id());
@@ -356,20 +363,27 @@ async fn handle_message(
 
     let status_message = message.reply("Wowking~   (ﾉ>ω<)ﾉ").await?;
 
-    let end_message =
-        match upload_with_status_updates(&client, &message, &status_message, url, downloader).await
-        {
-            Ok(_) => {
-                info!("Successfully sent video!");
-                Cow::Borrowed("did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
-            }
-            Err(e) => {
-                error!("Error occurred while sending the video: {:?}", e);
-                // TODO: make the error a code block
-                // the markdown parser seems a bit buggy, so can't really use it here.
-                Cow::Owned(format!("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.\n\n{:?}", e))
-            }
-        };
+    let end_message = match upload_with_status_updates(
+        &client,
+        &message,
+        &status_message,
+        url,
+        downloader,
+        video_handling_timeout,
+    )
+    .await
+    {
+        Ok(_) => {
+            info!("Successfully sent video!");
+            Cow::Borrowed("did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
+        }
+        Err(e) => {
+            error!("Error occurred while sending the video: {:?}", e);
+            // TODO: make the error a code block
+            // the markdown parser seems a bit buggy, so can't really use it here.
+            Cow::Owned(format!("ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.\n\n{:?}", e))
+        }
+    };
 
     status_message.edit(end_message.as_ref()).await?;
 
