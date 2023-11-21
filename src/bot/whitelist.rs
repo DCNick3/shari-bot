@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use snafu::{ResultExt, Whatever};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::fs::OpenOptions;
@@ -22,7 +22,7 @@ impl Whitelist {
     }
 
     /// Loads state from the storage
-    pub async fn new_from_disk(path: PathBuf) -> Result<Self> {
+    pub async fn new_from_disk(path: PathBuf) -> Result<Self, Whatever> {
         let mut me = Self::new_empty(path);
         let mut data = Vec::new();
         if me.storage_path.is_file() {
@@ -30,27 +30,29 @@ impl Whitelist {
                 .read(true)
                 .open(me.storage_path.as_path())
                 .await
-                .context("Opening file")?;
-            file.read_to_end(&mut data).await.context("Reading file")?;
+                .whatever_context("Opening file")?;
+            file.read_to_end(&mut data)
+                .await
+                .whatever_context("Reading file")?;
             me.allowed_users = serde_json::from_slice::<HashSet<UserId>>(&data[..])
-                .context("Deserializing data")?;
+                .whatever_context("Deserializing data")?;
         }
         Ok(me)
     }
 
-    async fn store_into_disk(&mut self) -> Result<()> {
+    async fn store_into_disk(&mut self) -> Result<(), Whatever> {
         let list_serialized =
-            serde_json::to_vec(&self.allowed_users).context("Serializing data")?;
+            serde_json::to_vec(&self.allowed_users).whatever_context("Serializing data")?;
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
             .open(self.storage_path.as_path())
             .await
-            .context("Opening file")?;
+            .whatever_context("Opening file")?;
         file.write_all(&list_serialized[..])
             .await
-            .context("Writing to file")?;
+            .whatever_context("Writing to file")?;
         Ok(())
     }
 
@@ -61,12 +63,12 @@ impl Whitelist {
     /// - If the set did not previously contain this value, `true` is returned,
     ///     updates are stored in the disk.
     /// - If the set already contained this value, `false` is returned.
-    pub async fn insert(&mut self, user: UserId) -> Result<bool> {
+    pub async fn insert(&mut self, user: UserId) -> Result<bool, Whatever> {
         let updated = self.allowed_users.insert(user);
         if updated {
             self.store_into_disk()
                 .await
-                .context("Storing state on disk")?;
+                .whatever_context("Storing state on disk")?;
         }
         Ok(updated)
     }
@@ -75,12 +77,12 @@ impl Whitelist {
     ///
     /// Returns whether the user was removed. If yes, the list is propagated
     /// on disk.
-    pub async fn remove(&mut self, user: UserId) -> Result<bool> {
+    pub async fn remove(&mut self, user: UserId) -> Result<bool, Whatever> {
         let updated = self.allowed_users.remove(&user);
         if updated {
             self.store_into_disk()
                 .await
-                .context("Storing state on disk")?;
+                .whatever_context("Storing state on disk")?;
         }
         Ok(updated)
     }

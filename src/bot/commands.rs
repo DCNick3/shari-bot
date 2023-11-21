@@ -1,10 +1,10 @@
 use crate::bot::markdown;
-use anyhow::Context;
 use grammers_client::client::auth::InvocationError;
 use grammers_client::types::{Chat, Message, User};
 use grammers_client::{Client, InputMessage};
 use grammers_tl_types::types::MessageEntityBotCommand;
 use indoc::indoc;
+use snafu::{OptionExt, ResultExt, Snafu, Whatever};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
@@ -18,11 +18,11 @@ impl Alias {
         Alias(arg.trim_start_matches('@').to_string())
     }
 
-    async fn resolve(&self, client: &Client) -> anyhow::Result<Option<User>> {
+    async fn resolve(&self, client: &Client) -> Result<Option<User>, Whatever> {
         let id = match client.resolve_username(&self.0).await {
             Ok(id) => id,
             Err(InvocationError::Rpc(r)) if r.code == 400 => None,
-            Err(e) => return Err(e).context("Requesting username resolve"),
+            Err(e) => return Err(e).whatever_context("Requesting username resolve"),
         };
         let user_id = id.map(|chat| match chat {
             Chat::User(id) => Some(id),
@@ -40,18 +40,20 @@ enum SuperuserCommand {
     Help,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Snafu)]
 enum CommandParseError {
     UnknownCommand,
     NoArgumentsProvided,
     #[allow(dead_code)]
     IncorrectArguments,
-    ParsingError(anyhow::Error),
+    ParsingError {
+        inner: Whatever,
+    },
 }
 
-impl From<anyhow::Error> for CommandParseError {
-    fn from(value: anyhow::Error) -> Self {
-        Self::ParsingError(value)
+impl From<Whatever> for CommandParseError {
+    fn from(value: Whatever) -> Self {
+        Self::ParsingError { inner: value }
     }
 }
 
@@ -64,17 +66,17 @@ impl SuperuserCommand {
         let text = text.encode_utf16().collect::<Vec<_>>();
         let command_text =
             &text[command.offset as usize..(command.offset + command.length) as usize];
-        let command_text =
-            String::from_utf16(command_text).context("Parsing command from message")?;
+        let command_text = String::from_utf16(command_text)
+            .whatever_context::<_, Whatever>("Parsing command from message")?;
         let args = &text[(command.offset + command.length) as usize..];
-        let args =
-            String::from_utf16(args).context("Parsing arguments for the command from message")?;
+        let args = String::from_utf16(args)
+            .whatever_context::<_, Whatever>("Parsing arguments for the command from message")?;
         let mut args = args.split_whitespace();
         // expect??
         let command = command_text
             .split('@')
             .next()
-            .context("Split produced no elements for some reason")?;
+            .whatever_context::<_, Whatever>("Split produced no elements for some reason")?;
 
         match command {
             "/whitelist" | "/whitelist_get" => Ok(Self::WhitelistGet),
@@ -99,7 +101,7 @@ pub async fn handle_command(
     command: &MessageEntityBotCommand,
     message: &Message,
     whitelist: Arc<Mutex<crate::bot::whitelist::Whitelist>>,
-) -> anyhow::Result<()> {
+) -> Result<(), Whatever> {
     let command = match SuperuserCommand::parse(command, message) {
         Ok(c) => c,
         Err(CommandParseError::UnknownCommand) => {
@@ -107,13 +109,15 @@ pub async fn handle_command(
                 .reply(InputMessage::text(
                     "I don't know such command, /help might help",
                 ))
-                .await?;
+                .await
+                .whatever_context("Sending reply")?;
             return Ok(());
         }
         Err(CommandParseError::NoArgumentsProvided) => {
             message
                 .reply(InputMessage::text("Missing argument(-s), /help might help"))
-                .await?;
+                .await
+                .whatever_context("Sending reply")?;
             return Ok(());
         }
         Err(CommandParseError::IncorrectArguments) => {
@@ -121,10 +125,11 @@ pub async fn handle_command(
                 .reply(InputMessage::text(
                     "I expected other arguments, /help might help",
                 ))
-                .await?;
+                .await
+                .whatever_context("Sending reply")?;
             return Ok(());
         }
-        Err(CommandParseError::ParsingError(e)) => return Err(e.context("Parsing command")),
+        Err(CommandParseError::ParsingError { inner: e }) => return Err(e),
     };
 
     match command {
@@ -135,7 +140,8 @@ pub async fn handle_command(
                     .reply(InputMessage::text(
                         "All telegram doesn't know this person 🔍\nDid you type the name correctly?",
                     ))
-                    .await?;
+                    .await
+                    .whatever_context("Sending reply")?;
                 return Ok(());
             };
             info!(
@@ -143,19 +149,26 @@ pub async fn handle_command(
                 user.username(),
                 user.id()
             );
-            let added = whitelist.lock().await.insert(user.id()).await?;
+            let added = whitelist
+                .lock()
+                .await
+                .insert(user.id())
+                .await
+                .whatever_context("Inserting user into whitelist")?;
             if added {
                 message
                     .reply(InputMessage::text(
                         "Added the user successfully! ✨ Now they can use this bot ✨",
                     ))
-                    .await?;
+                    .await
+                    .whatever_context("Sending reply")?;
             } else {
                 message
                     .reply(InputMessage::text(
                         "✨ I already know this person! (or bot 🤔) ✨",
                     ))
-                    .await?;
+                    .await
+                    .whatever_context("Sending reply")?;
             }
         }
         SuperuserCommand::WhitelistRemove(alias) => {
@@ -165,7 +178,8 @@ pub async fn handle_command(
                     .reply(InputMessage::text(
                         "All telegram doesn't know this person 🔍\nDid you type the name correctly?",
                     ))
-                    .await?;
+                    .await
+                    .whatever_context("Sending reply")?;
                 return Ok(());
             };
             info!(
@@ -173,17 +187,24 @@ pub async fn handle_command(
                 user.username(),
                 user.id()
             );
-            let removed = whitelist.lock().await.remove(user.id()).await?;
+            let removed = whitelist
+                .lock()
+                .await
+                .remove(user.id())
+                .await
+                .whatever_context("Removing user from whitelist")?;
             if removed {
                 message
                     .reply(InputMessage::text(
                         "Removed the user successfully.. We're not friends anymore 😭😭😭 ",
                     ))
-                    .await?;
+                    .await
+                    .whatever_context("Sending reply")?;
             } else {
                 message
                     .reply(InputMessage::text("Who's dat? Idk them, do you? 👊🤨 "))
-                    .await?;
+                    .await
+                    .whatever_context("Sending reply")?;
             }
         }
         SuperuserCommand::WhitelistGet => {
@@ -203,7 +224,10 @@ pub async fn handle_command(
                 ));
             }
             let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);
-            message.reply(InputMessage::markdown(&reply_md)).await?;
+            message
+                .reply(InputMessage::markdown(&reply_md))
+                .await
+                .whatever_context("Sending reply")?;
         }
         SuperuserCommand::Help => {
             message
@@ -215,7 +239,8 @@ pub async fn handle_command(
                 /help - show this message
                 "#
                 )))
-                .await?;
+                .await
+                .whatever_context("Sending reply")?;
         }
     }
     Ok(())
