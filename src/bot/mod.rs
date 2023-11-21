@@ -14,6 +14,7 @@ use grammers_client::{
     Client, InputMessage, Update,
 };
 use grammers_tl_types::enums;
+use indoc::indoc;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -87,6 +88,12 @@ pub async fn run_bot(
                     }
                 }
             } else {
+                message
+                    .reply(InputMessage::text(indoc!(
+                        r#"Took too long to download & upload the video, maybe the file is
+                        too large or the bot is under heavy load."#,
+                    )))
+                    .await?;
                 warn!("Took too long to handle a message, cancelled the task");
             }
         });
