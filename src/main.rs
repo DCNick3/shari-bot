@@ -2,11 +2,11 @@ use crate::bot::whitelist::Whitelist;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::tiktok::TikTokDownloader;
 use crate::downloader::youtube::YoutubeDownloader;
-use anyhow::Context;
-use anyhow::{bail, Result};
 use futures::{StreamExt, TryStreamExt};
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
+use indoc::indoc;
+use snafu::{whatever, ResultExt, Whatever};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,7 +19,7 @@ mod dispatcher;
 mod downloader;
 mod init_tracing;
 
-async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
+async fn connect_and_login(config: &config::Telegram) -> Result<Client, Whatever> {
     let mut catch_up = false;
 
     let session = match &config.session_storage {
@@ -29,7 +29,7 @@ async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
                 info!("Loading saved session from {}", session_storage.display());
                 // only request catch up when loading our own session, not a prepared or a new one
                 catch_up = true;
-                Some(Session::load_file(session_storage).context("Loading session")?)
+                Some(Session::load_file(session_storage).whatever_context("Loading session")?)
             } else {
                 info!("No session file found, creating a new session");
                 None
@@ -46,7 +46,7 @@ async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
         None => match &config.account {
             config::TelegramAccount::PreparedSession { session } => {
                 info!("Loading session from config");
-                Session::load(session).context("Loading session")?
+                Session::load(session).whatever_context("Loading session")?
             }
             _ => Session::new(),
         },
@@ -62,39 +62,45 @@ async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
         },
     })
     .await
-    .context("Connecting to telegram")?;
+    .whatever_context("Connecting to telegram")?;
 
     if !client
         .is_authorized()
         .await
-        .context("failed to check whether we are signed in")?
+        .whatever_context("failed to check whether we are signed in")?
     {
         info!("Not signed in, signing in...");
 
         match &config.account {
             config::TelegramAccount::PreparedSession { .. } => {
-                bail!("Prepared session is not signed in, please sign in manually and provide the session file")
+                whatever!(
+                    "{}",
+                    indoc!(
+                        r#"Prepared session is not signed in, please sign in manually
+                        and provide the session file"#
+                    )
+                )
             }
             config::TelegramAccount::Bot { token } => {
                 info!("Signing in as bot");
                 client
                     .bot_sign_in(token)
                     .await
-                    .context("Signing in as bot")?;
+                    .whatever_context("Signing in as bot")?;
             }
             config::TelegramAccount::User { phone } => {
                 info!("Signing in as user");
                 let login_token = client
                     .request_login_code(phone)
                     .await
-                    .context("Requesting login code")?;
+                    .whatever_context("Requesting login code")?;
 
                 info!("Asked telegram for login code, waiting for it to be entered");
 
                 let mut logic_code = String::new();
                 std::io::stdin()
                     .read_line(&mut logic_code)
-                    .context("Reading login code")?;
+                    .whatever_context("Reading login code")?;
                 let logic_code = logic_code.strip_suffix('\n').unwrap();
 
                 match client.sign_in(&login_token, &logic_code).await {
@@ -107,16 +113,16 @@ async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
                         let mut password = String::new();
                         std::io::stdin()
                             .read_line(&mut password)
-                            .context("Reading password")?;
+                            .whatever_context("Reading password")?;
                         let password = password.strip_suffix('\n').unwrap();
 
                         client
                             .check_password(password_token, password)
                             .await
-                            .context("Checking password")?;
+                            .whatever_context("Checking password")?;
                     }
                     Err(e) => {
-                        return Err(e).context("Signing in as user");
+                        return Err(e).whatever_context("Signing in as user");
                     }
                 }
             }
@@ -133,16 +139,17 @@ async fn connect_and_login(config: &config::Telegram) -> Result<Client> {
     Ok(client)
 }
 
-fn save_session(client: &Client, config: &config::Telegram) -> Result<()> {
+fn save_session(client: &Client, config: &config::Telegram) -> Result<(), Whatever> {
     if let Some(session_storage) = &config.session_storage {
         debug!("Saving session to {}", session_storage);
-        std::fs::write(session_storage, client.session().save()).context("Saving session")?;
+        std::fs::write(session_storage, client.session().save())
+            .whatever_context("Saving session")?;
     }
 
     Ok(())
 }
 
-async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Result<()> {
+async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Result<(), Whatever> {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 5));
 
     loop {
@@ -155,7 +162,7 @@ async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Re
 // mod remuxer;
 
 // #[tracing::instrument]
-// async fn remux_example() -> anyhow::Result<()> {
+// async fn remux_example() -> Result<()> {
 //     let client = reqwest::ClientBuilder::new()
 //         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36")
 //         .build()?;
@@ -166,9 +173,9 @@ async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Re
 //     let video_resp = client.execute(client.get(video_url).build()?).await?;
 //     let audio_resp = client.execute(client.get(audio_url).build()?).await?;
 //
-//     let video_stream = video_resp.bytes_stream().map_err(anyhow::Error::new);
+//     let video_stream = video_resp.bytes_stream().map_err(Whatever::new);
 //
-//     let audio_stream = audio_resp.bytes_stream().map_err(anyhow::Error::new);
+//     let audio_stream = audio_resp.bytes_stream().map_err(Whatever::new);
 //
 //     let mut output = tokio::fs::File::create("output.mp4").await?;
 //
@@ -189,14 +196,15 @@ async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Re
 // }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Whatever> {
     init_tracing::init_tracing()?;
 
-    let environment = std::env::var("ENVIRONMENT").context(
+    let environment = std::env::var("ENVIRONMENT").whatever_context(
         "Please set ENVIRONMENT env var (probably you want to use either 'prod' or 'dev')",
     )?;
 
-    let config = config::Config::load(&environment).context("Loading config has failed")?;
+    let config =
+        config::Config::load(&environment).whatever_context("Loading config has failed")?;
 
     info!("Resolved config: {:#?}", config);
 
@@ -205,7 +213,7 @@ async fn main() -> Result<()> {
     info!("Loading whitelist from disk");
     let whitelist = Whitelist::new_from_disk(PathBuf::from(config.data_storages.whitelist_file))
         .await
-        .context("Loading whitelist has failed")?;
+        .whatever_context("Loading whitelist has failed")?;
     info!(
         "Resolved whitelist with {} entries",
         whitelist.users().len()

@@ -5,7 +5,6 @@ pub mod whitelist;
 use crate::bot::commands::handle_command;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
-use anyhow::{anyhow, Context, Result};
 use futures::{FutureExt, TryStreamExt};
 use grammers_client::types::Attribute;
 use grammers_client::{
@@ -15,6 +14,7 @@ use grammers_client::{
 };
 use grammers_tl_types::enums;
 use indoc::indoc;
+use snafu::{FromString, ResultExt, Whatever};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -47,10 +47,10 @@ impl Notifier {
         (Self { chan: tx }, rx)
     }
 
-    pub fn notify_status(&self, status: UploadStatus) -> Result<()> {
+    pub fn notify_status(&self, status: UploadStatus) -> Result<(), Whatever> {
         self.chan
             .send(status)
-            .map_err(|_| anyhow!("Notification channel closed??"))
+            .map_err(|_| Whatever::without_source("Notification channel closed??".to_owned()))
     }
 }
 
@@ -60,9 +60,13 @@ pub async fn run_bot(
     video_handling_timeout: Duration,
     whitelist: Arc<Mutex<whitelist::Whitelist>>,
     superusers: HashSet<UserId>,
-) -> Result<()> {
+) -> Result<(), Whatever> {
     let superusers = Arc::new(superusers);
-    while let Some(update) = client.next_update().await.context("Getting next update")? {
+    while let Some(update) = client
+        .next_update()
+        .await
+        .whatever_context("Getting next update")?
+    {
         let Update::NewMessage(message) = update else {
             continue;
         };
@@ -102,7 +106,7 @@ async fn upload_video(
     url: Url,
     initial_message: &Message,
     notifier: Notifier,
-) -> Result<()> {
+) -> Result<(), Whatever> {
     let link_text = downloader.link_text();
 
     let (video_information, stream, size) = downloader.download(url.clone(), notifier).await?;
@@ -112,7 +116,7 @@ async fn upload_video(
     let uploaded_video = bot
         .upload_stream(&mut stream, size as usize, "video.mp4".to_string())
         .await
-        .context("Uploading video")?;
+        .whatever_context("Uploading video")?;
 
     debug!("Sending the video message...");
     let mut message = InputMessage::text("")
@@ -134,7 +138,7 @@ async fn upload_video(
     initial_message
         .reply(message)
         .await
-        .context("Sending video message")?;
+        .whatever_context("Sending video message")?;
 
     debug!("Successfully sent video!");
 
@@ -213,7 +217,7 @@ async fn upload_with_status_updates(
     url: Url,
     downloader: Arc<dyn Downloader>,
     video_handling_timeout: Duration,
-) -> Result<()> {
+) -> Result<(), Whatever> {
     let (notifier, notification_rx) = Notifier::make();
 
     let upload_fut = upload_video(&client, downloader, url, initial_message, notifier)
@@ -233,14 +237,14 @@ async fn upload_with_status_updates(
                 status_message
                     .edit(message)
                     .await
-                    .context("Editing status message")?;
+                    .whatever_context("Editing status message")?;
             }
         }
 
         // unreachable, but not useless
         // it drives the type inference for the async block
         #[allow(unreachable_code)]
-        Ok::<(), anyhow::Error>(())
+        Ok::<(), Whatever>(())
     }
     .instrument(info_span!("update_status_message"))
     .fuse();
@@ -257,7 +261,8 @@ async fn upload_with_status_updates(
                             r#"Took too long to download & upload the video, maybe the file is
                             too large or the bot is under heavy load."#,
                         )))
-                        .await?;
+                        .await
+                        .whatever_context("Editing message")?;
                     return Ok(());
                 }
             }
@@ -284,7 +289,7 @@ async fn handle_message(
     whitelist: Arc<Mutex<whitelist::Whitelist>>,
     superusers: Arc<HashSet<UserId>>,
     video_handling_timeout: Duration,
-) -> Result<()> {
+) -> Result<(), Whatever> {
     let chat = message.chat();
     debug!("Got message from {:?}", chat.id());
     if !matches!(chat, Chat::User(_)) {
@@ -296,7 +301,8 @@ async fn handle_message(
 
         message
             .reply("sowwy i am not awwowed to spek with pepel i donbt now (yet) (/ω＼)")
-            .await?;
+            .await
+            .whatever_context("Sending reply")?;
 
         return Ok(());
     }
@@ -336,26 +342,31 @@ async fn handle_message(
             .reply(InputMessage::text(
                 "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
             ))
-            .await?;
+            .await
+            .whatever_context("Sending reply")?;
         return Ok(());
     };
 
     let url = &text[url.offset as usize..(url.offset + url.length) as usize];
-    let url = String::from_utf16(url).context("Parsing Url from message")?;
-    let url = Url::parse(&url).context("Parsing Url that telegram marked as a Url")?;
+    let url = String::from_utf16(url).whatever_context("Parsing Url from message")?;
+    let url = Url::parse(&url).whatever_context("Parsing Url that telegram marked as a Url")?;
 
     debug!("Extracted URL: {}", url);
 
     let Some(downloader) = dispatcher.find_downloader(&url) else {
         message
             .reply("I donbt no ho to doload tis url((999")
-            .await?;
+            .await
+            .whatever_context("Sending reply")?;
         return Ok(());
     };
 
     debug!("Found downloader: {:?}", downloader);
 
-    let status_message = message.reply("Wowking~   (ﾉ>ω<)ﾉ").await?;
+    let status_message = message
+        .reply("Wowking~   (ﾉ>ω<)ﾉ")
+        .await
+        .whatever_context("Sending reply")?;
 
     let end_message = match upload_with_status_updates(
         &client,
@@ -379,7 +390,10 @@ async fn handle_message(
         }
     };
 
-    status_message.edit(end_message.as_ref()).await?;
+    status_message
+        .edit(end_message.as_ref())
+        .await
+        .whatever_context("Editing message")?;
 
     Ok(())
 }

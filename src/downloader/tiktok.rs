@@ -1,6 +1,5 @@
 use crate::bot::Notifier;
 use crate::downloader::{Downloader, VideoInformation};
-use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -10,6 +9,7 @@ use reqwest::cookie::{CookieStore, Jar};
 use reqwest::header::{COOKIE, LOCATION, ORIGIN, REFERER, SET_COOKIE, USER_AGENT};
 use reqwest::redirect::Policy;
 use reqwest::{Client, ClientBuilder};
+use snafu::{whatever, FromString, OptionExt, ResultExt, Whatever};
 use std::sync::Arc;
 use tracing::debug;
 use url::Url;
@@ -31,15 +31,15 @@ static LINK_PATTERN: Lazy<Regex> = Lazy::new(|| {
 });
 
 #[tracing::instrument(skip_all)]
-async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> anyhow::Result<Url> {
+async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> Result<Url, Whatever> {
     debug!("Sending a request to the main page to get the token...");
     let main_page_resp = client
         .get("https://ttdownloader.com")
         .send()
         .await
-        .context("Getting ttdownloader main page")?
+        .whatever_context("Getting ttdownloader main page")?
         .error_for_status()
-        .context("ttdownloader responded with an error")?;
+        .whatever_context("ttdownloader responded with an error")?;
 
     let jar = Jar::default();
     jar.set_cookies(
@@ -49,15 +49,18 @@ async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> anyhow::Re
 
     let cookies = jar
         .cookies(main_page_resp.url())
-        .ok_or(anyhow!("Could not find cookies in the response"))?;
+        .ok_or(Whatever::without_source(
+            "Could not find cookies in the response".to_owned(),
+        ))?;
 
     let main_page = main_page_resp
         .text()
         .await
-        .context("Getting ttdownloader main page")?;
+        .whatever_context("Getting ttdownloader main page")?;
 
     let captures = TOKEN_PATTERN.captures_iter(&main_page).next();
-    let captures = captures.context("Could not find ttdownloader token on the main page")?;
+    let captures =
+        captures.whatever_context("Could not find ttdownloader token on the main page")?;
     let token = captures.get(1).unwrap().as_str();
 
     debug!("Found token: {}", token);
@@ -76,19 +79,19 @@ async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> anyhow::Re
         .header("X-Requested-With", "XMLHttpRequest")
         .send()
         .await
-        .context("Sending the tiktok request to ttdownloader")?
+        .whatever_context("Sending the tiktok request to ttdownloader")?
         .error_for_status()
-        .context("ttdownloader responded with an error")?
+        .whatever_context("ttdownloader responded with an error")?
         .text()
         .await
-        .context("Getting ttdownloader response")?;
+        .whatever_context("Getting ttdownloader response")?;
 
     debug!("Response: {}", resp);
 
     let link = LINK_PATTERN
         .captures_iter(&resp)
         .next()
-        .context("Could not find link in ttdownloader response")?;
+        .whatever_context("Could not find link in ttdownloader response")?;
 
     let link = link.get(1).unwrap().as_str();
 
@@ -99,27 +102,27 @@ async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> anyhow::Re
 
     debug!("Making a final request to dereference the link to actual tt CDN");
 
-    let res = client
-        .get(link)
-        .send()
-        .await
-        .context("Sending reqwest to ttdownloader link to deference the redirect failed")?;
+    let res = client.get(link).send().await.whatever_context(
+        "Sending reqwest to ttdownloader link to deference the redirect failed",
+    )?;
 
     if !res.status().is_redirection() {
-        return Err(anyhow!(
-            "Expected to get a redirect, but got this:\n{:?}",
-            res
-        ));
+        whatever!("Expected to get a redirect, but got this:\n{:?}", res);
     }
 
     let location = res
         .headers()
         .get(LOCATION)
-        .context("Could not find location header in ttdownloader response")?;
+        .whatever_context("Could not find location header in ttdownloader response")?;
 
     debug!("Extracted Location: {:?}", location);
 
-    let video_url = Url::parse(location.to_str()?).context("Location is not a URL??")?;
+    let video_url = Url::parse(
+        location
+            .to_str()
+            .whatever_context("Converting video location to String")?,
+    )
+    .whatever_context("Location is not a URL??")?;
 
     debug!("Parsed video_url: {}", video_url);
 
@@ -164,11 +167,14 @@ impl Downloader for TikTokDownloader {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> anyhow::Result<(
-        Option<VideoInformation>,
-        BoxStream<'static, std::io::Result<Bytes>>,
-        u64,
-    )> {
+    ) -> Result<
+        (
+            Option<VideoInformation>,
+            BoxStream<'static, std::io::Result<Bytes>>,
+            u64,
+        ),
+        Whatever,
+    > {
         let video_link = ttdownloader_get_video_link(&self.client, url).await?;
 
         super::stream_url(&self.client, video_link, None, notifier).await
