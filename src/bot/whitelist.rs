@@ -43,6 +43,7 @@ impl Whitelist {
             serde_json::to_vec(&self.allowed_users).context("Serializing data")?;
         let mut file = OpenOptions::new()
             .write(true)
+            .truncate(true)
             .create(true)
             .open(self.storage_path.as_path())
             .await
