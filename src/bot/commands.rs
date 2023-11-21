@@ -209,7 +209,7 @@ pub async fn handle_command(
             message
                 .reply(InputMessage::text(indoc!(
                     r#"
-                /whitelist - list whitelist
+                /whitelist - show users in whitelist
                 /whitelist_add @username - add user to the whitelist 
                 /whitelist_remove @username - remove user from the whitelist 
                 /help - show this message
