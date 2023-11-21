@@ -75,7 +75,8 @@ pub async fn run_bot(
         let whitelist = whitelist.clone();
         let superusers = superusers.clone();
         tokio::spawn(async move {
-            let handle_result = handle_message(
+            // error are logged by tracing instrument macro
+            let _ = handle_message(
                 message,
                 client,
                 dispatcher,
@@ -84,13 +85,6 @@ pub async fn run_bot(
                 video_handling_timeout,
             )
             .await;
-
-            match handle_result {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error occurred while handling message: {:?}", e);
-                }
-            }
         });
     }
 
@@ -282,7 +276,7 @@ where
         .find_map(finder)
 }
 
-#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()))]
+#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()), err)]
 async fn handle_message(
     message: Message,
     client: Client,
