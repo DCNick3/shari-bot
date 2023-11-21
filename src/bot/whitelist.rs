@@ -21,7 +21,7 @@ impl Whitelist {
         }
     }
 
-    /// Loads state from the storage, overriding everything.
+    /// Loads state from the storage
     pub async fn new_from_disk(path: PathBuf) -> Result<Self> {
         let mut me = Self::new_empty(path);
         let mut data = Vec::new();
