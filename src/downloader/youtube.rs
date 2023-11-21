@@ -1,9 +1,10 @@
 use crate::bot::Notifier;
 use crate::downloader::{Downloader, VideoInformation};
+use crate::whatever::Whatever;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use snafu::{ResultExt, Whatever};
+use snafu::ResultExt;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;

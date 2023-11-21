@@ -2,11 +2,12 @@ use crate::bot::whitelist::Whitelist;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::tiktok::TikTokDownloader;
 use crate::downloader::youtube::YoutubeDownloader;
+use crate::whatever::Whatever;
 use futures::{StreamExt, TryStreamExt};
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
 use indoc::indoc;
-use snafu::{whatever, ResultExt, Whatever};
+use snafu::{whatever, ResultExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +19,7 @@ mod config;
 mod dispatcher;
 mod downloader;
 mod init_tracing;
+mod whatever;
 
 async fn connect_and_login(config: &config::Telegram) -> Result<Client, Whatever> {
     let mut catch_up = false;

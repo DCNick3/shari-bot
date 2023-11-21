@@ -1,5 +1,6 @@
 use crate::bot::Notifier;
 use crate::downloader::{Downloader, VideoInformation};
+use crate::whatever::Whatever;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -9,7 +10,7 @@ use reqwest::cookie::{CookieStore, Jar};
 use reqwest::header::{COOKIE, LOCATION, ORIGIN, REFERER, SET_COOKIE, USER_AGENT};
 use reqwest::redirect::Policy;
 use reqwest::{Client, ClientBuilder};
-use snafu::{whatever, FromString, OptionExt, ResultExt, Whatever};
+use snafu::{whatever, FromString, OptionExt, ResultExt};
 use std::sync::Arc;
 use tracing::debug;
 use url::Url;

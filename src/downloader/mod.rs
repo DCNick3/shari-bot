@@ -2,6 +2,7 @@ pub mod tiktok;
 pub mod youtube;
 
 use crate::bot::{Notifier, UploadStatus};
+use crate::whatever::Whatever;
 use crate::{StreamExt, TryStreamExt};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -9,9 +10,7 @@ use futures::stream::BoxStream;
 use futures::Stream;
 use pin_project_lite::pin_project;
 use reqwest::Client;
-use snafu::futures::TryStreamExt as OtherTryStreamExt;
-use snafu::{AsErrorSource, OptionExt, ResultExt, Whatever};
-use std::error::Error;
+use snafu::{OptionExt, ResultExt};
 use std::fmt::Debug;
 use std::io::ErrorKind;
 use std::pin::Pin;

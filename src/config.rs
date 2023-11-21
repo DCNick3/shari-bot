@@ -1,6 +1,7 @@
 use crate::bot::UserId;
+use crate::whatever::Whatever;
 use serde::Deserialize;
-use snafu::{ResultExt, Whatever};
+use snafu::ResultExt;
 use std::collections::HashSet;
 
 #[derive(Deserialize, Clone, Debug)]

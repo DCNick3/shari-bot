@@ -5,6 +5,7 @@ pub mod whitelist;
 use crate::bot::commands::handle_command;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
+use crate::whatever::Whatever;
 use futures::{FutureExt, TryStreamExt};
 use grammers_client::types::Attribute;
 use grammers_client::{
@@ -14,7 +15,7 @@ use grammers_client::{
 };
 use grammers_tl_types::enums;
 use indoc::indoc;
-use snafu::{FromString, ResultExt, Whatever};
+use snafu::{FromString, ResultExt};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
