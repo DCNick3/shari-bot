@@ -1,2 +1,0 @@
-telegram:
-  session_storage: "/data/tgbot.session"

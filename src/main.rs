@@ -232,7 +232,7 @@ async fn main() -> Result<(), Whatever> {
         _ = tokio::signal::ctrl_c() => {
             info!("Got SIGINT; quitting early gracefully");
         }
-        r = bot::run_bot(&client, dispatcher, Duration::from_secs(60), whitelist, config.superusers) => {
+        r = bot::run_bot(&client, dispatcher, Duration::from_secs(60), whitelist, config.access.superusers) => {
             match r {
                 Ok(_) => info!("Got disconnected from Telegram gracefully"),
                 Err(e) => error!("Error during update handling: {}", e),

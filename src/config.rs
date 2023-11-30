@@ -8,7 +8,7 @@ use std::collections::HashSet;
 pub struct Config {
     pub telegram: Telegram,
     pub data_storages: Data,
-    pub superusers: HashSet<UserId>,
+    pub access: Access,
 }
 
 impl Config {
@@ -71,4 +71,8 @@ pub enum TelegramAccount {
 #[derive(Deserialize, Clone, Debug)]
 pub struct Data {
     pub whitelist_file: String,
+}
+#[derive(Deserialize, Clone, Debug)]
+pub struct Access {
+    pub superusers: HashSet<UserId>,
 }
