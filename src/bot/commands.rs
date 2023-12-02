@@ -1,4 +1,4 @@
-use crate::bot::markdown;
+use crate::bot::{markdown, UserId};
 use crate::whatever::Whatever;
 use grammers_client::client::auth::InvocationError;
 use grammers_client::types::{Chat, Message, User};
@@ -153,7 +153,7 @@ pub async fn handle_command(
             let added = whitelist
                 .lock()
                 .await
-                .insert(user.id())
+                .insert(UserId(user.id()))
                 .await
                 .whatever_context("Inserting user into whitelist")?;
             if added {
@@ -191,7 +191,7 @@ pub async fn handle_command(
             let removed = whitelist
                 .lock()
                 .await
-                .remove(user.id())
+                .remove(UserId(user.id()))
                 .await
                 .whatever_context("Removing user from whitelist")?;
             if removed {

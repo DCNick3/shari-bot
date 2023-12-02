@@ -15,6 +15,7 @@ use grammers_client::{
 };
 use grammers_tl_types::enums;
 use indoc::indoc;
+use serde::{Deserialize, Serialize};
 use snafu::{FromString, ResultExt, Snafu};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -29,7 +30,8 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 use url::Url;
 
-pub type UserId = i64;
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Hash)]
+pub struct UserId(pub i64);
 
 #[derive(Clone)]
 pub enum UploadStatus {
@@ -299,7 +301,9 @@ async fn handle_message(
         info!("Ignoring message not from private chat ({:?})", chat);
     }
 
-    if !superusers.contains(&chat.id()) && !whitelist.lock().await.contains(chat.id()) {
+    if !superusers.contains(&UserId(chat.id()))
+        && !whitelist.lock().await.contains(UserId(chat.id()))
+    {
         info!("Ignoring message from non-superuser ({:?})", chat);
 
         message
@@ -324,7 +328,7 @@ async fn handle_message(
 
     let text = text.encode_utf16().collect::<Vec<_>>();
 
-    if superusers.contains(&chat.id()) {
+    if superusers.contains(&UserId(chat.id())) {
         if let Some(command) = find_message_entity(&message, |e| match e {
             enums::MessageEntity::BotCommand(command) => Some(command),
             _ => None,

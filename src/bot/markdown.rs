@@ -74,7 +74,7 @@ pub fn link(url: &str, text: &str) -> String {
 #[must_use = "This function returns a new string, rather than mutating the argument, so calling it \
               without using its output does nothing useful"]
 pub fn user_mention(user_id: UserId, text: &str) -> String {
-    link(format!("tg://user?id={user_id}").as_str(), text)
+    link(format!("tg://user?id={}", user_id.0).as_str(), text)
 }
 
 /// Formats the code block.
