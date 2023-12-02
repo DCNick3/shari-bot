@@ -1,5 +1,4 @@
 telegram:
-  #  session_storage: "tguser.session"
   session_storage: "tgbot.session"
   api_id: ""
   api_hash: ""
@@ -8,6 +7,7 @@ telegram:
     token: ""
 data_storages:
   whitelist_file: "data/whitelist.json"
-superusers:
-  - 123456789
-  - 123456780
+access:
+  superusers:
+    - 123456789
+    - 123456780
