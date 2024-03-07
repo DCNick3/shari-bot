@@ -2,14 +2,15 @@ pub mod tiktok;
 pub mod youtube;
 
 use crate::bot::{Notifier, UploadStatus};
+use crate::whatever::Whatever;
 use crate::{StreamExt, TryStreamExt};
-use anyhow::Context as _;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use futures::Stream;
 use pin_project_lite::pin_project;
 use reqwest::Client;
+use snafu::{OptionExt, ResultExt};
 use std::fmt::Debug;
 use std::io::ErrorKind;
 use std::pin::Pin;
@@ -27,21 +28,24 @@ pub struct VideoInformation {
 
 #[async_trait]
 pub trait Downloader: Debug + Send + Sync {
-    fn probe_url(&self, url: &url::Url) -> bool;
+    fn probe_url(&self, url: &Url) -> bool;
     fn link_text(&self) -> &'static str;
     async fn download(
         self: Arc<Self>,
-        url: url::Url,
+        url: Url,
         notifier: Notifier,
-    ) -> anyhow::Result<(
-        Option<VideoInformation>,
-        BoxStream<'static, futures::io::Result<Bytes>>,
-        u64,
-    )>;
+    ) -> Result<
+        (
+            Option<VideoInformation>,
+            BoxStream<'static, futures::io::Result<Bytes>>,
+            u64,
+        ),
+        Whatever,
+    >;
 }
 
 pin_project! {
-    struct ProgressStream<T: Stream<Item = anyhow::Result<Bytes>>> {
+    struct ProgressStream<T: Stream<Item = Result<Bytes, reqwest::Error>>> {
         #[pin]
         stream: T,
         size: Option<u64>,
@@ -50,7 +54,7 @@ pin_project! {
     }
 }
 
-impl<T: Stream<Item = anyhow::Result<Bytes>>> ProgressStream<T> {
+impl<T: Stream<Item = Result<Bytes, reqwest::Error>>> ProgressStream<T> {
     pub fn new(stream: T, size: Option<u64>, notifier: Notifier) -> Self {
         Self {
             stream,
@@ -61,8 +65,8 @@ impl<T: Stream<Item = anyhow::Result<Bytes>>> ProgressStream<T> {
     }
 }
 
-impl<T: Stream<Item = anyhow::Result<Bytes>>> Stream for ProgressStream<T> {
-    type Item = anyhow::Result<Bytes>;
+impl<T: Stream<Item = Result<Bytes, reqwest::Error>>> Stream for ProgressStream<T> {
+    type Item = Result<Bytes, reqwest::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let self_ = self.project();
@@ -94,18 +98,31 @@ async fn stream_url(
     url: Url,
     video_information: Option<VideoInformation>,
     notifier: Notifier,
-) -> anyhow::Result<(
-    Option<VideoInformation>,
-    BoxStream<'static, futures::io::Result<Bytes>>,
-    u64,
-)> {
-    let resp = client.execute(client.get(url).build()?).await?;
+) -> Result<
+    (
+        Option<VideoInformation>,
+        BoxStream<'static, futures::io::Result<Bytes>>,
+        u64,
+    ),
+    Whatever,
+> {
+    let resp = client
+        .execute(
+            client
+                .get(url)
+                .build()
+                .whatever_context("Building a request")?,
+        )
+        .await
+        .whatever_context("Executing the request")?;
 
-    let size = resp.content_length().context("No content length??")?;
+    let size = resp
+        .content_length()
+        .whatever_context("No content length??")?;
 
     debug!("Streaming {:?} bytes...", size);
 
-    let stream = resp.bytes_stream().map_err(|e| anyhow::Error::new(e));
+    let stream = resp.bytes_stream();
 
     let stream = ProgressStream::new(stream, Some(size), notifier);
 

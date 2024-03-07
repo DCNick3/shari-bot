@@ -1,8 +1,11 @@
+mod commands;
 mod markdown;
+pub mod whitelist;
 
+use crate::bot::commands::handle_command;
 use crate::dispatcher::DownloadDispatcher;
 use crate::downloader::Downloader;
-use anyhow::{anyhow, Context, Result};
+use crate::whatever::Whatever;
 use futures::{FutureExt, TryStreamExt};
 use grammers_client::types::Attribute;
 use grammers_client::{
@@ -11,17 +14,24 @@ use grammers_client::{
     Client, InputMessage, Update,
 };
 use grammers_tl_types::enums;
+use indoc::indoc;
+use serde::{Deserialize, Serialize};
+use snafu::{FromString, ResultExt, Snafu};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio::sync::Mutex;
+use tokio::time::timeout;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tracing::{debug, error, info, info_span, instrument, Instrument};
+use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 use url::Url;
 
-const SUPERUSER: i64 = 379529027;
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Hash)]
+pub struct UserId(pub i64);
 
 #[derive(Clone)]
 pub enum UploadStatus {
@@ -40,15 +50,26 @@ impl Notifier {
         (Self { chan: tx }, rx)
     }
 
-    pub fn notify_status(&self, status: UploadStatus) -> Result<()> {
+    pub fn notify_status(&self, status: UploadStatus) -> Result<(), Whatever> {
         self.chan
             .send(status)
-            .map_err(|_| anyhow!("Notification channel closed??"))
+            .map_err(|_| Whatever::without_source("Notification channel closed??".to_owned()))
     }
 }
 
-pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>) -> Result<()> {
-    while let Some(update) = client.next_update().await.context("Getting next update")? {
+pub async fn run_bot(
+    client: &Client,
+    dispatcher: Arc<DownloadDispatcher>,
+    video_handling_timeout: Duration,
+    whitelist: Arc<Mutex<whitelist::Whitelist>>,
+    superusers: HashSet<UserId>,
+) -> Result<(), Whatever> {
+    let superusers = Arc::new(superusers);
+    while let Some(update) = client
+        .next_update()
+        .await
+        .whatever_context("Getting next update")?
+    {
         let Update::NewMessage(message) = update else {
             continue;
         };
@@ -56,12 +77,22 @@ pub async fn run_bot(client: &Client, dispatcher: Arc<DownloadDispatcher>) -> Re
             continue;
         }
 
-        match handle_message(message, &client, dispatcher.clone()).await {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Error occurred while handling message: {:?}", e);
-            }
-        }
+        let dispatcher = dispatcher.clone();
+        let client = client.clone();
+        let whitelist = whitelist.clone();
+        let superusers = superusers.clone();
+        tokio::spawn(async move {
+            // error are logged by tracing instrument macro
+            let _ = handle_message(
+                message,
+                client,
+                dispatcher,
+                whitelist,
+                superusers,
+                video_handling_timeout,
+            )
+            .await;
+        });
     }
 
     info!("Stopped getting updates!");
@@ -78,7 +109,7 @@ async fn upload_video(
     url: Url,
     initial_message: &Message,
     notifier: Notifier,
-) -> Result<()> {
+) -> Result<(), Whatever> {
     let link_text = downloader.link_text();
 
     let (video_information, stream, size) = downloader.download(url.clone(), notifier).await?;
@@ -88,7 +119,7 @@ async fn upload_video(
     let uploaded_video = bot
         .upload_stream(&mut stream, size as usize, "video.mp4".to_string())
         .await
-        .context("Uploading video")?;
+        .whatever_context("Uploading video")?;
 
     debug!("Sending the video message...");
     let mut message = InputMessage::text("")
@@ -110,7 +141,7 @@ async fn upload_video(
     initial_message
         .reply(message)
         .await
-        .context("Sending video message")?;
+        .whatever_context("Sending video message")?;
 
     debug!("Successfully sent video!");
 
@@ -181,6 +212,18 @@ impl StatusMessageState {
     }
 }
 
+#[derive(Debug, Snafu)]
+enum UploadError {
+    Timeout,
+    Other { inner: Whatever },
+}
+
+impl From<Whatever> for UploadError {
+    fn from(value: Whatever) -> Self {
+        UploadError::Other { inner: value }
+    }
+}
+
 #[instrument(skip_all, fields(url = %url, downloader_name = downloader.link_text()))]
 async fn upload_with_status_updates(
     client: &Client,
@@ -188,12 +231,14 @@ async fn upload_with_status_updates(
     status_message: &Message,
     url: Url,
     downloader: Arc<dyn Downloader>,
-) -> Result<()> {
+    video_handling_timeout: Duration,
+) -> Result<(), UploadError> {
     let (notifier, notification_rx) = Notifier::make();
 
     let upload_fut = upload_video(&client, downloader, url, initial_message, notifier)
         .fuse()
         .instrument(info_span!("upload_video"));
+    let upload_fut = timeout(video_handling_timeout, upload_fut);
 
     let mut interval = tokio::time::interval(Duration::from_secs(1));
 
@@ -207,47 +252,64 @@ async fn upload_with_status_updates(
                 status_message
                     .edit(message)
                     .await
-                    .context("Editing status message")?;
+                    .whatever_context("Editing status message")?;
             }
         }
 
         // unreachable, but not useless
         // it drives the type inference for the async block
         #[allow(unreachable_code)]
-        Ok::<(), anyhow::Error>(())
+        Ok::<(), Whatever>(())
     }
     .instrument(info_span!("update_status_message"))
     .fuse();
-
     select! {
-        err = status_update_fut => return Err(err.unwrap_err()),
+        err = status_update_fut => return Err(err.unwrap_err().into()),
         r = upload_fut => {
             debug!("Upload future finished");
-            r?;
+            match r {
+                Ok(r) => return Ok(r?),
+                Err(_) => return Err(UploadError::Timeout),
+            }
         }
     }
-
-    Ok(())
 }
 
-#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()))]
+fn find_message_entity<E, F>(message: &Message, finder: F) -> Option<&E>
+where
+    F: for<'a> FnMut(&'a enums::MessageEntity) -> Option<&'a E>,
+{
+    message
+        .fmt_entities()
+        .into_iter()
+        .flatten()
+        .find_map(finder)
+}
+
+#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()), err)]
 async fn handle_message(
     message: Message,
-    client: &Client,
+    client: Client,
     dispatcher: Arc<DownloadDispatcher>,
-) -> Result<()> {
+    whitelist: Arc<Mutex<whitelist::Whitelist>>,
+    superusers: Arc<HashSet<UserId>>,
+    video_handling_timeout: Duration,
+) -> Result<(), Whatever> {
     let chat = message.chat();
     debug!("Got message from {:?}", chat.id());
     if !matches!(chat, Chat::User(_)) {
         info!("Ignoring message not from private chat ({:?})", chat);
     }
 
-    if chat.id() != SUPERUSER {
+    if !superusers.contains(&UserId(chat.id()))
+        && !whitelist.lock().await.contains(UserId(chat.id()))
+    {
         info!("Ignoring message from non-superuser ({:?})", chat);
 
         message
             .reply("sowwy i am not awwowed to spek with pepel i donbt now (yet) (/ω＼)")
-            .await?;
+            .await
+            .whatever_context("Sending reply")?;
 
         return Ok(());
     }
@@ -266,46 +328,60 @@ async fn handle_message(
 
     let text = text.encode_utf16().collect::<Vec<_>>();
 
-    let Some(url) = message
-        .fmt_entities()
-        .into_iter()
-        .flatten()
-        .find_map(|e| match e {
-            enums::MessageEntity::Url(url) => Some(url),
+    if superusers.contains(&UserId(chat.id())) {
+        if let Some(command) = find_message_entity(&message, |e| match e {
+            enums::MessageEntity::BotCommand(command) => Some(command),
             _ => None,
-        })
-    else {
+        }) {
+            debug!("Found command");
+            handle_command(&client, command, &message, whitelist).await?;
+            return Ok(());
+        } else {
+            debug!("No commands were found");
+        };
+    }
+
+    let Some(url) = find_message_entity(&message, |e| match e {
+        enums::MessageEntity::Url(url) => Some(url),
+        _ => None,
+    }) else {
         message
             .reply(InputMessage::text(
                 "Sen me smth with a URL in it and I wiww try to figuwe it out UwU",
             ))
-            .await?;
+            .await
+            .whatever_context("Sending reply")?;
         return Ok(());
     };
 
     let url = &text[url.offset as usize..(url.offset + url.length) as usize];
-    let url = String::from_utf16(url).context("Parsing Url from message")?;
-    let url = Url::parse(&url).context("Parsing Url that telegram marked as a Url")?;
+    let url = String::from_utf16(url).whatever_context("Parsing Url from message")?;
+    let url = Url::parse(&url).whatever_context("Parsing Url that telegram marked as a Url")?;
 
     debug!("Extracted URL: {}", url);
 
     let Some(downloader) = dispatcher.find_downloader(&url) else {
         message
             .reply("I donbt no ho to doload tis url((999")
-            .await?;
+            .await
+            .whatever_context("Sending reply")?;
         return Ok(());
     };
 
     debug!("Found downloader: {:?}", downloader);
 
-    let status_message = message.reply("Wowking~   (ﾉ>ω<)ﾉ").await?;
+    let status_message = message
+        .reply("Wowking~   (ﾉ>ω<)ﾉ")
+        .await
+        .whatever_context("Sending reply")?;
 
     let end_message = match upload_with_status_updates(
-        client,
+        &client,
         &message,
         &status_message,
         url,
         downloader,
+        video_handling_timeout,
     )
     .await
     {
@@ -313,7 +389,14 @@ async fn handle_message(
             info!("Successfully sent video!");
             Cow::Borrowed("did it!1!1!  (ﾉ>ω<)ﾉ :｡･:*:･ﾟ’★,｡･:*:･ﾟ’☆")
         }
-        Err(e) => {
+        Err(UploadError::Timeout) => {
+            warn!("Took too long to handle a message, stopped video handling");
+            Cow::Borrowed(indoc!(
+                r#"Took too long to download & upload the video, maybe the file is
+                too large or the bot is under heavy load."#,
+            ))
+        }
+        Err(UploadError::Other { inner: e }) => {
             error!("Error occurred while sending the video: {:?}", e);
             // TODO: make the error a code block
             // the markdown parser seems a bit buggy, so can't really use it here.
@@ -321,7 +404,10 @@ async fn handle_message(
         }
     };
 
-    status_message.edit(end_message.as_ref()).await?;
+    status_message
+        .edit(end_message.as_ref())
+        .await
+        .whatever_context("Editing message")?;
 
     Ok(())
 }

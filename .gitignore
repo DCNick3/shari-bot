@@ -4,3 +4,4 @@ output.mp4
 *.local.yaml
 tgbot.session
 tguser.session
+/data

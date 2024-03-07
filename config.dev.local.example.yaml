@@ -1,0 +1,13 @@
+telegram:
+  session_storage: "tgbot.session"
+  api_id: ""
+  api_hash: ""
+  account:
+    type: "Bot"
+    token: ""
+data_storages:
+  whitelist_file: "data/whitelist.json"
+access:
+  superusers:
+    - 123456789
+    - 123456780

@@ -1,13 +1,18 @@
-use anyhow::{Context, Result};
+use crate::bot::UserId;
+use crate::whatever::Whatever;
 use serde::Deserialize;
+use snafu::ResultExt;
+use std::collections::HashSet;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub telegram: Telegram,
+    pub data_storages: Data,
+    pub access: Access,
 }
 
 impl Config {
-    pub fn load(environment: &str) -> Result<Config> {
+    pub fn load(environment: &str) -> Result<Config, Whatever> {
         let config = config::Config::builder()
             .add_source(config::File::new("config.yaml", config::FileFormat::Yaml).required(false))
             .add_source(
@@ -34,11 +39,11 @@ impl Config {
                     .list_separator(","),
             )
             .build()
-            .context("Building the config file")?;
+            .whatever_context("Building the config file")?;
 
         config
             .try_deserialize()
-            .context("Deserializing config structure failed")
+            .whatever_context("Deserializing config structure failed")
     }
 }
 
@@ -62,4 +67,12 @@ pub enum TelegramAccount {
     User {
         phone: String,
     },
+}
+#[derive(Deserialize, Clone, Debug)]
+pub struct Data {
+    pub whitelist_file: String,
+}
+#[derive(Deserialize, Clone, Debug)]
+pub struct Access {
+    pub superusers: HashSet<UserId>,
 }

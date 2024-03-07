@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Context};
 use async_process::Command;
 use bytes::{Bytes, BytesMut};
 use futures::future::FusedFuture;
 use futures::{FutureExt, Stream, TryFutureExt};
 use pin_project_lite::pin_project;
+use snafu::Whatever;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
@@ -17,31 +17,31 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{info, trace};
 
 async fn write_stream(
-    stream: impl Stream<Item = anyhow::Result<Bytes>>,
+    stream: impl Stream<Item = Result<Bytes, Whatever>>,
     dest: impl AsyncWrite,
-) -> anyhow::Result<()> {
+) -> Result<(), Whatever> {
     pin!(stream);
     pin!(dest);
     while let Some(value) = stream.next().await {
-        let value = value.context("Reading from stream")?;
+        let value = value.whatever_context("Reading from stream")?;
         trace!("Write {} bytes!!", value.len());
         dest.write_all(value.as_ref())
             .await
-            .context("Writing to stream")?;
+            .whatever_context("Writing to stream")?;
     }
     Ok(())
 }
 
-async fn pump_ffmpeg_stdout(reader: impl AsyncBufRead) -> anyhow::Result<()> {
+async fn pump_ffmpeg_stdout(reader: impl AsyncBufRead) -> Result<()> {
     pin!(reader);
     let mut lines = reader.lines();
 
     let mut progress: HashMap<String, String> = HashMap::new();
 
     while let Some(line) = lines.next_line().await? {
-        let (k, v) = line
-            .split_once('=')
-            .ok_or_else(|| anyhow!("ffmpeg stdout was not k=v-formatted"))?;
+        let (k, v) = line.split_once('=').ok_or_else(|| {
+            Whatever::without_source("ffmpeg stdout was not k=v-formatted").to_owned()
+        })?;
 
         if k == "progress" {
             let fps = progress.get("fps").map(|v| v.as_str()).unwrap_or("");
@@ -58,7 +58,7 @@ async fn pump_ffmpeg_stdout(reader: impl AsyncBufRead) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn pump_ffmpeg_stderr(reader: impl AsyncBufRead) -> anyhow::Result<()> {
+async fn pump_ffmpeg_stderr(reader: impl AsyncBufRead) -> Result<()> {
     pin!(reader);
     let mut lines = reader.lines();
     while let Some(line) = lines.next_line().await? {
@@ -69,7 +69,7 @@ async fn pump_ffmpeg_stderr(reader: impl AsyncBufRead) -> anyhow::Result<()> {
 
 pin_project! {
     struct RemuxStream<
-        W: FusedFuture<Output = anyhow::Result<()>>,
+        W: FusedFuture<Output = Result<()>>,
         S: Stream<Item = Result<BytesMut, tokio::io::Error>>,
     > {
         #[pin]
@@ -79,12 +79,10 @@ pin_project! {
     }
 }
 
-impl<
-        W: FusedFuture<Output = anyhow::Result<()>>,
-        S: Stream<Item = Result<BytesMut, tokio::io::Error>>,
-    > Stream for RemuxStream<W, S>
+impl<W: FusedFuture<Output = Result<()>>, S: Stream<Item = Result<BytesMut, tokio::io::Error>>>
+    Stream for RemuxStream<W, S>
 {
-    type Item = anyhow::Result<Bytes>;
+    type Item = Result<Bytes>;
 
     fn poll_next(
         self: Pin<&mut Self>,
@@ -96,7 +94,7 @@ impl<
             return Poll::Ready(Some(Err(e)));
         }
         if let Poll::Ready(r) = self_.upstream.poll_next(cx) {
-            Poll::Ready(r.map(|r| r.map(|b| b.freeze()).map_err(anyhow::Error::new)))
+            Poll::Ready(r.map(|r| r.map(|b| b.freeze()).map_err(Whatever::new)))
         } else {
             Poll::Pending
         }
@@ -105,12 +103,12 @@ impl<
 
 #[tracing::instrument(skip_all)]
 pub async fn remux(
-    video: impl Stream<Item = anyhow::Result<Bytes>>,
-    audio: impl Stream<Item = anyhow::Result<Bytes>>,
+    video: impl Stream<Item = Result<Bytes>>,
+    audio: impl Stream<Item = Result<Bytes>>,
     // dest: impl AsyncWrite,
-) -> anyhow::Result<impl Stream<Item = anyhow::Result<Bytes>>> {
+) -> Result<impl Stream<Item = Result<Bytes>>> {
     // TODO: get this from config or smth
-    let ffmpeg = which::which("ffmpeg").context("Locating the ffmpeg binary")?;
+    let ffmpeg = which::which("ffmpeg").whatever_context("Locating the ffmpeg binary")?;
 
     info!("Found ffmpeg: {:?}", &ffmpeg);
 
@@ -122,10 +120,12 @@ pub async fn remux(
     let audio_in_pipe_name = tmp.path().join("audio_in");
     let muxed_out_pipe_name = tmp.path().join("muxed_out");
 
-    unix_named_pipe::create(&video_in_pipe_name, Some(0o600)).context("Creating video_in pipe")?;
-    unix_named_pipe::create(&audio_in_pipe_name, Some(0o600)).context("Creating audio_in pipe")?;
+    unix_named_pipe::create(&video_in_pipe_name, Some(0o600))
+        .whatever_context("Creating video_in pipe")?;
+    unix_named_pipe::create(&audio_in_pipe_name, Some(0o600))
+        .whatever_context("Creating audio_in pipe")?;
     unix_named_pipe::create(&muxed_out_pipe_name, Some(0o600))
-        .context("Creating muxed_out pipe")?;
+        .whatever_context("Creating muxed_out pipe")?;
 
     info!("Created pipes, spawning ffmpeg...");
 
@@ -153,7 +153,7 @@ pub async fn remux(
         // write to pipe
         .arg(&muxed_out_pipe_name)
         .spawn()
-        .context("Spawning ffmpeg")?;
+        .whatever_context("Spawning ffmpeg")?;
 
     // pin!(dest);
 
@@ -167,24 +167,27 @@ pub async fn remux(
         trace!("Starting stdout pump");
         pump_ffmpeg_stdout(stdout)
             .await
-            .context("Pumping ffmpeg stdout")
+            .whatever_context("Pumping ffmpeg stdout")
     };
     let pump_sterr = async {
         trace!("Starting stderr pump");
         pump_ffmpeg_stderr(stderr)
             .await
-            .context("Pumping ffmpeg stderr")
+            .whatever_context("Pumping ffmpeg stderr")
     };
     let wait_ffmpeg = async {
         trace!("Starting ffmpeg");
         ffmpeg_status_fut
             .await
-            .context("Waiting for ffmpeg status")
-            .and_then(|s: ExitStatus| -> anyhow::Result<()> {
+            .whatever_context("Waiting for ffmpeg status")
+            .and_then(|s: ExitStatus| -> Result<()> {
                 if s.success() {
                     Ok(())
                 } else {
-                    Err(anyhow!("ffmpeg exited with bad ExitStatus: {}", s))
+                    Err(Whatever::without_source(format!(
+                        "ffmpeg exited with bad ExitStatus: {}",
+                        s,
+                    )))
                 }
             })
     };
@@ -195,24 +198,24 @@ pub async fn remux(
         OpenOptions::new()
             .write(true)
             .open(video_in_pipe_name)
-            .map_err(anyhow::Error::new)
+            .map_err(Whatever::new)
             .and_then(|video_in_pipe| async move {
                 write_stream(video, video_in_pipe)
                     .await
-                    .context("Piping video stream to ffmpeg")
+                    .whatever_context("Piping video stream to ffmpeg")
             })
             .await
-            .context("Piping video stream to ffmpeg")
+            .whatever_context("Piping video stream to ffmpeg")
     };
     let pipe_audio = async {
         trace!("Starting audio_in pipe");
         OpenOptions::new()
             .write(true)
             .open(audio_in_pipe_name)
-            .map_err(anyhow::Error::new)
+            .map_err(Whatever::new)
             .and_then(|audio_in_pipe| async move { write_stream(audio, audio_in_pipe).await })
             .await
-            .context("Piping audio stream to ffmpeg")
+            .whatever_context("Piping audio stream to ffmpeg")
     };
 
     let joined = async {
@@ -226,7 +229,7 @@ pub async fn remux(
             .read(true)
             .open(muxed_out_pipe_name)
             .await
-            .context("Piping muxed stream from ffmpeg to output")
+            .whatever_context("Piping muxed stream from ffmpeg to output")
     };
     let muxed_out_pipe = select! {
         r = &mut joined => {

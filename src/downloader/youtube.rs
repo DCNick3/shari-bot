@@ -1,9 +1,10 @@
 use crate::bot::Notifier;
 use crate::downloader::{Downloader, VideoInformation};
-use anyhow::Context;
+use crate::whatever::Whatever;
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
+use snafu::ResultExt;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
@@ -20,7 +21,7 @@ impl YoutubeDownloader {
 
 #[async_trait]
 impl Downloader for YoutubeDownloader {
-    fn probe_url(&self, url: &url::Url) -> bool {
+    fn probe_url(&self, url: &Url) -> bool {
         rusty_ytdl::get_video_id(url.as_str()).is_some()
     }
 
@@ -33,20 +34,27 @@ impl Downloader for YoutubeDownloader {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> anyhow::Result<(
-        Option<VideoInformation>,
-        BoxStream<'static, futures::io::Result<Bytes>>,
-        u64,
-    )> {
+    ) -> Result<
+        (
+            Option<VideoInformation>,
+            BoxStream<'static, futures::io::Result<Bytes>>,
+            u64,
+        ),
+        Whatever,
+    > {
         debug!("Starting download!");
 
         let client = reqwest::ClientBuilder::new()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.115 Safari/537.36")
-            .build()?;
+            .build()
+            .whatever_context("Building client")?;
 
-        let video = rusty_ytdl::Video::new(url).context("Creating video")?;
+        let video = rusty_ytdl::Video::new(url).whatever_context("Creating video")?;
 
-        let info = video.get_info().await.context("Getting video info")?;
+        let info = video
+            .get_info()
+            .await
+            .whatever_context("Getting video info")?;
         debug!("Got video info: {:?}", info);
 
         // rusty_ytdl's format selection algo is kinda whacky...
@@ -73,7 +81,7 @@ impl Downloader for YoutubeDownloader {
                 info.video_details
                     .length_seconds
                     .parse()
-                    .context("Parsing video length")?,
+                    .whatever_context("Parsing video length")?,
             ),
         };
 
@@ -85,9 +93,9 @@ impl Downloader for YoutubeDownloader {
         // let video_resp = client.execute(client.get(video_url).build()?).await?;
         // let audio_resp = client.execute(client.get(audio_url).build()?).await?;
         //
-        // let video_stream = video_resp.bytes_stream().map_err(anyhow::Error::new);
+        // let video_stream = video_resp.bytes_stream().map_err(Whatever::new);
 
-        // let audio_stream = audio_resp.bytes_stream().map_err(anyhow::Error::new);
+        // let audio_stream = audio_resp.bytes_stream().map_err(Whatever::new);
 
         // let out_stream = remuxer::remux(video_stream, audio_stream).await?;
 
