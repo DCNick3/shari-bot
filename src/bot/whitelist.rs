@@ -42,14 +42,7 @@ impl Whitelist {
     async fn store_into_disk(&mut self) -> Result<(), Whatever> {
         let list_serialized =
             serde_json::to_vec(&self.allowed_users).whatever_context("Serializing data")?;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(self.storage_path.as_path())
-            .await
-            .whatever_context("Opening file")?;
-        file.write_all(&list_serialized[..])
+        tokio::fs::write(self.storage_path.as_path(), list_serialized)
             .await
             .whatever_context("Writing to file")?;
         Ok(())
