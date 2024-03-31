@@ -1,9 +1,10 @@
 use crate::whatever::Whatever;
 use snafu::ResultExt;
-use std::collections::HashSet;
-use std::path::PathBuf;
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::{collections::HashSet, io, path::PathBuf};
+use tokio::{
+    fs::{read_to_string, OpenOptions},
+    io::AsyncWriteExt,
+};
 
 use super::UserId;
 
@@ -25,18 +26,15 @@ impl Whitelist {
     /// Loads state from the storage
     pub async fn new_from_disk(path: PathBuf) -> Result<Self, Whatever> {
         let mut me = Self::new_empty(path);
-        let mut data = Vec::new();
-        if me.storage_path.is_file() {
-            let mut file = OpenOptions::new()
-                .read(true)
-                .open(me.storage_path.as_path())
-                .await
-                .whatever_context("Opening file")?;
-            file.read_to_end(&mut data)
-                .await
-                .whatever_context("Reading file")?;
-            me.allowed_users = serde_json::from_slice::<HashSet<UserId>>(&data[..])
-                .whatever_context("Deserializing data")?;
+        match read_to_string(&me.storage_path).await {
+            Ok(data) => {
+                me.allowed_users = serde_json::from_str::<HashSet<UserId>>(&data)
+                    .whatever_context("Deserializing data")?;
+            }
+            Err(e) => match e.kind() {
+                io::ErrorKind::NotFound => (),
+                _ => Err(e).whatever_context("Reading from file")?,
+            },
         }
         Ok(me)
     }
