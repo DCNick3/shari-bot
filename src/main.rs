@@ -1,16 +1,19 @@
-use crate::bot::whitelist::Whitelist;
-use crate::dispatcher::DownloadDispatcher;
-use crate::downloader::tiktok::TikTokDownloader;
-use crate::downloader::youtube::YoutubeDownloader;
-use crate::whatever::Whatever;
+use crate::{
+    bot::whitelist::Whitelist,
+    dispatcher::DownloadDispatcher,
+    downloader::{tiktok::TikTokDownloader, youtube::YoutubeDownloader},
+    whatever::Whatever,
+};
 use futures::{StreamExt, TryStreamExt};
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
 use indoc::indoc;
 use snafu::{whatever, ResultExt};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
@@ -105,7 +108,7 @@ async fn connect_and_login(config: &config::Telegram) -> Result<Client, Whatever
                     .whatever_context("Reading login code")?;
                 let logic_code = logic_code.strip_suffix('\n').unwrap();
 
-                match client.sign_in(&login_token, &logic_code).await {
+                match client.sign_in(&login_token, logic_code).await {
                     Ok(_) => {}
                     Err(SignInError::PasswordRequired(password_token)) => {
                         info!(

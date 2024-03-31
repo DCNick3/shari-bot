@@ -2,30 +2,29 @@ mod commands;
 mod markdown;
 pub mod whitelist;
 
-use crate::bot::commands::handle_command;
-use crate::dispatcher::DownloadDispatcher;
-use crate::downloader::Downloader;
-use crate::whatever::Whatever;
+use crate::{
+    bot::commands::handle_command, dispatcher::DownloadDispatcher, downloader::Downloader,
+    whatever::Whatever,
+};
 use futures::{FutureExt, TryStreamExt};
-use grammers_client::types::Attribute;
 use grammers_client::{
     button, reply_markup,
-    types::{Chat, Message},
+    types::{Attribute, Chat, Message},
     Client, InputMessage, Update,
 };
 use grammers_tl_types::enums;
 use indoc::indoc;
 use serde::{Deserialize, Serialize};
 use snafu::{FromString, ResultExt, Snafu};
-use std::borrow::Cow;
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::select;
-use tokio::sync::watch::Receiver;
-use tokio::sync::watch::Sender;
-use tokio::sync::Mutex;
-use tokio::time::timeout;
+use std::{borrow::Cow, collections::HashSet, sync::Arc, time::Duration};
+use tokio::{
+    select,
+    sync::{
+        watch::{Receiver, Sender},
+        Mutex,
+    },
+    time::timeout,
+};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 use url::Url;
@@ -235,7 +234,7 @@ async fn upload_with_status_updates(
 ) -> Result<(), UploadError> {
     let (notifier, notification_rx) = Notifier::make();
 
-    let upload_fut = upload_video(&client, downloader, url, initial_message, notifier)
+    let upload_fut = upload_video(client, downloader, url, initial_message, notifier)
         .fuse()
         .instrument(info_span!("upload_video"));
     let upload_fut = timeout(video_handling_timeout, upload_fut);
