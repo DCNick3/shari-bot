@@ -1,10 +1,7 @@
 use crate::whatever::Whatever;
 use snafu::ResultExt;
 use std::{collections::HashSet, io, path::PathBuf};
-use tokio::{
-    fs::{read_to_string, OpenOptions},
-    io::AsyncWriteExt,
-};
+use tokio::fs::read_to_string;
 
 use super::UserId;
 
