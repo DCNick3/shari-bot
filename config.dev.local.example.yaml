@@ -1,10 +1,10 @@
 telegram:
   session_storage: "tgbot.session"
-  api_id: ""
-  api_hash: ""
+  api_id: "<paste API ID>"
+  api_hash: "<paste API hash>"
   account:
     type: "Bot"
-    token: ""
+    token: "<paste token>"
 data_storages:
   whitelist_file: "data/whitelist.json"
 access:
