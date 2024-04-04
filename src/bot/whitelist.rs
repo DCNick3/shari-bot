@@ -32,7 +32,7 @@ impl Whitelist {
         match read_to_string(&me.storage_path).await {
             Ok(data) => {
                 me.allowed_users = serde_json::from_str::<HashMap<UserId, UserInfo>>(&data)
-                    .whatever_context("Deserializing data")?;
+                    .whatever_context("Deserializing whitelist")?;
             }
             Err(e) => match e.kind() {
                 io::ErrorKind::NotFound => (),
@@ -44,7 +44,7 @@ impl Whitelist {
 
     async fn store_into_disk(&mut self) -> Result<(), Whatever> {
         let list_serialized =
-            serde_json::to_vec(&self.allowed_users).whatever_context("Serializing data")?;
+            serde_json::to_vec(&self.allowed_users).whatever_context("Serializing whitelist")?;
         if let Some(parent) = self.storage_path.as_path().parent() {
             tokio::fs::create_dir_all(parent)
                 .await
