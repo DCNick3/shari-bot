@@ -10,7 +10,7 @@ use grammers_client::{
 use grammers_session::PackedChat;
 use grammers_tl_types::types::MessageEntityBotCommand;
 use indoc::indoc;
-use snafu::{futures::TryFutureExt, OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
@@ -230,7 +230,7 @@ pub async fn handle_command(
             let whitelist = whitelist.lock().await;
             let user_ids = whitelist.users();
             let mut users_string = String::with_capacity(user_ids.len());
-            for (i, (user_id, user_info)) in user_ids.iter().enumerate() {
+            for (user_id, user_info) in user_ids.iter() {
                 let chat = client
                     .unpack_chat(PackedChat {
                         ty: grammers_session::PackedType::User,
@@ -244,13 +244,13 @@ pub async fn handle_command(
                     Some(name) => format!("@{}", name),
                     // apparently won't link properly if user did not interact with the bot:
                     // https://stackoverflow.com/questions/40048452/telegram-bot-how-to-mention-user-by-its-id-not-its-username#comment108737106_46310679
-                    None => markdown::user_mention(
-                        *user_id,
-                        &format!("<cringe cuteness drowning femboy>"),
-                    ),
+                    None => markdown::user_mention(*user_id, "<cringe cuteness drowning femboy>"),
                 };
 
-                users_string.push_str(&format!("beeestieee {} 😎 (the best one!!!)\n\\\n",));
+                users_string.push_str(&format!(
+                    "beeestieee {} 😎 (the best one!!!)\n\\\n",
+                    user_tag
+                ));
             }
             let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);
             message

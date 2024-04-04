@@ -1,16 +1,12 @@
 use crate::whatever::Whatever;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::{
-    collections::{HashMap, HashSet},
-    io,
-    path::PathBuf,
-};
+use std::{collections::HashMap, io, path::PathBuf};
 use tokio::fs::read_to_string;
 
 use super::UserId;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Hash)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Clone, Hash)]
 pub struct UserInfo {
     pub access_hash: i64,
 }
@@ -90,6 +86,7 @@ impl Whitelist {
 
     /// Returns user info given user id.
     #[inline]
+    #[allow(unused)]
     pub fn get(&self, user: &UserId) -> Option<&UserInfo> {
         self.allowed_users.get(user)
     }
