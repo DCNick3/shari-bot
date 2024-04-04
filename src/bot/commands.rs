@@ -1,14 +1,19 @@
-use crate::bot::{markdown, UserId};
-use crate::whatever::Whatever;
-use grammers_client::client::auth::InvocationError;
-use grammers_client::types::{Chat, Message, User};
-use grammers_client::{Client, InputMessage};
+use crate::{
+    bot::{markdown, whitelist::UserInfo, UserId},
+    whatever::Whatever,
+};
+use grammers_client::{
+    client::auth::InvocationError,
+    types::{Chat, Message, User},
+    Client, InputMessage,
+};
+use grammers_session::PackedChat;
 use grammers_tl_types::types::MessageEntityBotCommand;
 use indoc::indoc;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{futures::TryFutureExt, OptionExt, ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[derive(Debug)]
 struct Alias(String);
@@ -150,10 +155,22 @@ pub async fn handle_command(
                 user.username(),
                 user.id()
             );
+            let Some(access_hash) = grammers_session::PackedChat::from(user.clone()).access_hash
+            else {
+                warn!("no access hash found for user id {:?}", user.id());
+                message
+                    .reply(InputMessage::text(format!(
+                        "Cannot access info of {:?}",
+                        user.username()
+                    )))
+                    .await
+                    .whatever_context("Sending reply")?;
+                return Ok(());
+            };
             let added = whitelist
                 .lock()
                 .await
-                .insert(UserId(user.id()))
+                .insert(UserId(user.id()), UserInfo { access_hash })
                 .await
                 .whatever_context("Inserting user into whitelist")?;
             if added {
@@ -194,7 +211,7 @@ pub async fn handle_command(
                 .remove(UserId(user.id()))
                 .await
                 .whatever_context("Removing user from whitelist")?;
-            if removed {
+            if removed.is_some() {
                 message
                     .reply(InputMessage::text(
                         "Removed the user successfully.. We're not friends anymore 😭😭😭 ",
@@ -213,15 +230,31 @@ pub async fn handle_command(
             let whitelist = whitelist.lock().await;
             let user_ids = whitelist.users();
             let mut users_string = String::with_capacity(user_ids.len());
-            for (i, user_id) in user_ids.iter().enumerate() {
+            for (i, (user_id, user_info)) in user_ids.iter().enumerate() {
+                // old
+
                 // apparently won't link properly if user did not interact with the bot:
                 // https://stackoverflow.com/questions/40048452/telegram-bot-how-to-mention-user-by-its-id-not-its-username#comment108737106_46310679
                 users_string.push_str(&format!(
                     "{}\\\n",
                     markdown::user_mention(
                         *user_id,
-                        &format!("beeestieee {i} 😎 (the best one!!!)\n")
+                        &format!("old: beeestieee {i} 😎 (the best one!!!)\n")
                     )
+                ));
+
+                // new (test)
+                let chat = client
+                    .unpack_chat(PackedChat {
+                        ty: grammers_session::PackedType::User,
+                        id: user_id.0,
+                        access_hash: Some(user_info.access_hash),
+                    })
+                    .await
+                    .whatever_context("Unpacking chat")?;
+                users_string.push_str(&format!(
+                    "new: beeestieee {} 😎 (the best one!!!)\n\\\n",
+                    &format!("@{}", chat.username().unwrap_or("unknown_username"))
                 ));
             }
             let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);

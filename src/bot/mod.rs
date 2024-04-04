@@ -285,7 +285,7 @@ where
         .find_map(finder)
 }
 
-#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()), err)]
+#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()), err(Debug))]
 async fn handle_message(
     message: Message,
     client: Client,
@@ -301,7 +301,7 @@ async fn handle_message(
     }
 
     if !superusers.contains(&UserId(chat.id()))
-        && !whitelist.lock().await.contains(UserId(chat.id()))
+        && !whitelist.lock().await.contains(&UserId(chat.id()))
     {
         info!("Ignoring message from non-superuser ({:?})", chat);
 
