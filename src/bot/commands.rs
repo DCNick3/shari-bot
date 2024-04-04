@@ -231,19 +231,6 @@ pub async fn handle_command(
             let user_ids = whitelist.users();
             let mut users_string = String::with_capacity(user_ids.len());
             for (i, (user_id, user_info)) in user_ids.iter().enumerate() {
-                // old
-
-                // apparently won't link properly if user did not interact with the bot:
-                // https://stackoverflow.com/questions/40048452/telegram-bot-how-to-mention-user-by-its-id-not-its-username#comment108737106_46310679
-                users_string.push_str(&format!(
-                    "{}\\\n",
-                    markdown::user_mention(
-                        *user_id,
-                        &format!("old: beeestieee {i} 😎 (the best one!!!)\n")
-                    )
-                ));
-
-                // new (test)
                 let chat = client
                     .unpack_chat(PackedChat {
                         ty: grammers_session::PackedType::User,
@@ -252,10 +239,18 @@ pub async fn handle_command(
                     })
                     .await
                     .whatever_context("Unpacking chat")?;
-                users_string.push_str(&format!(
-                    "new: beeestieee {} 😎 (the best one!!!)\n\\\n",
-                    &format!("@{}", chat.username().unwrap_or("unknown_username"))
-                ));
+
+                let user_tag = match chat.username() {
+                    Some(name) => format!("@{}", name),
+                    // apparently won't link properly if user did not interact with the bot:
+                    // https://stackoverflow.com/questions/40048452/telegram-bot-how-to-mention-user-by-its-id-not-its-username#comment108737106_46310679
+                    None => markdown::user_mention(
+                        *user_id,
+                        &format!("<cringe cuteness drowning femboy>"),
+                    ),
+                };
+
+                users_string.push_str(&format!("beeestieee {} 😎 (the best one!!!)\n\\\n",));
             }
             let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);
             message
