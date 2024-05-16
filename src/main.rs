@@ -201,6 +201,7 @@ async fn save_session_periodic(client: &Client, config: &config::Telegram) -> Re
 // }
 
 #[tokio::main(flavor = "current_thread")]
+#[snafu::report]
 async fn main() -> Result<(), Whatever> {
     init_tracing::init_tracing()?;
 
