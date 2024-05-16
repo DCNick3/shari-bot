@@ -26,6 +26,17 @@ pub struct VideoInformation {
     pub duration: Duration,
 }
 
+pub struct BytesStream {
+    pub stream: BoxStream<'static, futures::io::Result<Bytes>>,
+    pub size: u64,
+}
+
+pub struct VideoDownloadResult {
+    pub canonical_url: Url,
+    pub video_information: Option<VideoInformation>,
+    pub video_stream: BytesStream,
+}
+
 #[async_trait]
 pub trait Downloader: Debug + Send + Sync {
     fn probe_url(&self, url: &Url) -> bool;
@@ -34,14 +45,7 @@ pub trait Downloader: Debug + Send + Sync {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> Result<
-        (
-            Option<VideoInformation>,
-            BoxStream<'static, futures::io::Result<Bytes>>,
-            u64,
-        ),
-        Whatever,
-    >;
+    ) -> Result<VideoDownloadResult, Whatever>;
 }
 
 pin_project! {
@@ -96,16 +100,8 @@ impl<T: Stream<Item = Result<Bytes, reqwest::Error>>> Stream for ProgressStream<
 async fn stream_url(
     client: &Client,
     url: Url,
-    video_information: Option<VideoInformation>,
     notifier: Notifier,
-) -> Result<
-    (
-        Option<VideoInformation>,
-        BoxStream<'static, futures::io::Result<Bytes>>,
-        u64,
-    ),
-    Whatever,
-> {
+) -> Result<BytesStream, Whatever> {
     let resp = client
         .execute(
             client
@@ -130,5 +126,7 @@ async fn stream_url(
         .map_err(|e| futures::io::Error::new(ErrorKind::Other, e))
         .boxed();
 
-    Ok((video_information, stream, size))
+    let stream = BytesStream { stream, size };
+
+    Ok(stream)
 }

@@ -1,9 +1,7 @@
 use crate::bot::Notifier;
-use crate::downloader::{Downloader, VideoInformation};
+use crate::downloader::{Downloader, VideoDownloadResult};
 use crate::whatever::Whatever;
 use async_trait::async_trait;
-use bytes::Bytes;
-use futures::stream::BoxStream;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::cookie::{CookieStore, Jar};
@@ -32,7 +30,7 @@ static LINK_PATTERN: Lazy<Regex> = Lazy::new(|| {
 });
 
 #[tracing::instrument(skip_all)]
-async fn ttdownloader_get_video_link(client: &Client, tt_url: Url) -> Result<Url, Whatever> {
+async fn ttdownloader_get_video_link(client: &Client, tt_url: &Url) -> Result<Url, Whatever> {
     debug!("Sending a request to the main page to get the token...");
     let main_page_resp = client
         .get("https://ttdownloader.com")
@@ -168,16 +166,15 @@ impl Downloader for TikTokDownloader {
         self: Arc<Self>,
         url: Url,
         notifier: Notifier,
-    ) -> Result<
-        (
-            Option<VideoInformation>,
-            BoxStream<'static, std::io::Result<Bytes>>,
-            u64,
-        ),
-        Whatever,
-    > {
-        let video_link = ttdownloader_get_video_link(&self.client, url).await?;
+    ) -> Result<VideoDownloadResult, Whatever> {
+        let video_link = ttdownloader_get_video_link(&self.client, &url).await?;
+        let video_stream = super::stream_url(&self.client, video_link, notifier).await?;
 
-        super::stream_url(&self.client, video_link, None, notifier).await
+        Ok(VideoDownloadResult {
+            // TODO: resolve the url, get the video information somehow
+            canonical_url: url,
+            video_information: None,
+            video_stream,
+        })
     }
 }

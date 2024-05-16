@@ -2,6 +2,7 @@ mod commands;
 mod markdown;
 pub mod whitelist;
 
+use crate::downloader::{BytesStream, VideoDownloadResult};
 use crate::{
     bot::commands::handle_command, dispatcher::DownloadDispatcher, downloader::Downloader,
     whatever::Whatever,
@@ -111,7 +112,11 @@ async fn upload_video(
 ) -> Result<(), Whatever> {
     let link_text = downloader.link_text();
 
-    let (video_information, stream, size) = downloader.download(url.clone(), notifier).await?;
+    let VideoDownloadResult {
+        canonical_url,
+        video_information,
+        video_stream: BytesStream { stream, size },
+    } = downloader.download(url.clone(), notifier).await?;
     let mut stream = stream.into_async_read().compat();
 
     debug!("Uploading the stream to telegram...");
@@ -123,7 +128,7 @@ async fn upload_video(
     debug!("Sending the video message...");
     let mut message = InputMessage::text("")
         .document(uploaded_video)
-        .reply_markup(&make_keyboard(link_text, url));
+        .reply_markup(&make_keyboard(link_text, canonical_url));
     if let Some(video_information) = video_information {
         // big files require this information
         // short videos can be sent without it
