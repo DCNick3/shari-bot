@@ -5,7 +5,7 @@ use grammers_client::{
     types::{Attribute, Message},
     Client, InputMessage,
 };
-use snafu::{FromString, ResultExt};
+use snafu::{FromString, ResultExt, Snafu};
 use tokio::{
     select,
     sync::watch::{Receiver, Sender},
@@ -17,10 +17,16 @@ use url::Url;
 
 use crate::{
     bot,
-    bot::{lang::Lang, markdown, UploadError},
+    bot::{lang::Lang, markdown},
     downloader::{BytesStream, Downloader, VideoDownloadResult},
     whatever::Whatever,
 };
+
+#[derive(Debug, Snafu)]
+pub enum UploadError {
+    Timeout,
+    Other { source: Whatever },
+}
 
 #[derive(Clone)]
 pub enum UploadStatus {
@@ -86,11 +92,11 @@ pub async fn upload_with_status_updates(
     .instrument(info_span!("update_status_message"))
     .fuse();
     select! {
-        err = status_update_fut => return Err(err.unwrap_err().into()),
+        err = status_update_fut => return Err(err.unwrap_err()).context(OtherSnafu),
         r = upload_fut => {
             debug!("Upload future finished");
             match r {
-                Ok(r) => return Ok(r?),
+                Ok(r) => return Ok(r.context(OtherSnafu)?),
                 Err(_) => return Err(UploadError::Timeout),
             }
         }

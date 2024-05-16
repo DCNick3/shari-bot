@@ -13,9 +13,10 @@ use grammers_client::{
 };
 use grammers_tl_types::enums;
 use serde::{Deserialize, Serialize};
-use snafu::{ResultExt as _, Snafu};
+use snafu::ResultExt as _;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, instrument, warn};
+use upload::UploadError;
 use url::Url;
 
 pub use self::upload::{UploadNotifier, UploadStatus};
@@ -72,18 +73,6 @@ pub async fn run_bot(
 
 fn make_keyboard(link_text: &str, url: Url) -> reply_markup::Inline {
     reply_markup::inline(vec![vec![button::url(link_text, url)]])
-}
-
-#[derive(Debug, Snafu)]
-enum UploadError {
-    Timeout,
-    Other { inner: Whatever },
-}
-
-impl From<Whatever> for UploadError {
-    fn from(value: Whatever) -> Self {
-        UploadError::Other { inner: value }
-    }
 }
 
 fn find_message_entity<E, F>(message: &Message, finder: F) -> Option<&E>
@@ -199,7 +188,7 @@ async fn handle_message_impl(
             warn!("Took too long to handle a message, stopped video handling");
             Lang::ResultErrorTimeout
         }
-        Err(UploadError::Other { inner: e }) => {
+        Err(UploadError::Other { source: e }) => {
             error!("Error occurred while sending the video: {:?}", e);
             return Err(e);
         }
