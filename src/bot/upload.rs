@@ -16,7 +16,6 @@ use tracing::{debug, info_span, instrument, Instrument};
 use url::Url;
 
 use crate::{
-    bot,
     bot::{lang::Lang, markdown},
     downloader::{BytesStream, Downloader, VideoDownloadResult},
     whatever::Whatever,
@@ -126,9 +125,8 @@ async fn upload_video(
         .whatever_context("Uploading video")?;
 
     debug!("Sending the video message...");
-    let mut message = InputMessage::text("")
-        .document(uploaded_video)
-        .reply_markup(&bot::make_keyboard(link_text, canonical_url));
+    let mut message = InputMessage::markdown(markdown::link(canonical_url.as_str(), &link_text))
+        .document(uploaded_video);
     if let Some(video_information) = video_information {
         // big files require this information
         // short videos can be sent without it

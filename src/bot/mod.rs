@@ -7,7 +7,6 @@ pub mod whitelist;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use grammers_client::{
-    button, reply_markup,
     types::{Chat, Message},
     Client, InputMessage, Update,
 };
@@ -69,10 +68,6 @@ pub async fn run_bot(
 
     info!("Stopped getting updates!");
     Ok(())
-}
-
-fn make_keyboard(link_text: &str, url: Url) -> reply_markup::Inline {
-    reply_markup::inline(vec![vec![button::url(link_text, url)]])
 }
 
 fn find_message_entity<E, F>(message: &Message, finder: F) -> Option<&E>
