@@ -1,17 +1,23 @@
-use crate::bot::UploadNotifier;
-use crate::downloader::{Downloader, VideoDownloadResult};
-use crate::whatever::Whatever;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use reqwest::cookie::{CookieStore, Jar};
-use reqwest::header::{COOKIE, LOCATION, ORIGIN, REFERER, SET_COOKIE, USER_AGENT};
-use reqwest::redirect::Policy;
-use reqwest::{Client, ClientBuilder};
+use reqwest::{
+    cookie::{CookieStore, Jar},
+    header::{COOKIE, LOCATION, ORIGIN, REFERER, SET_COOKIE, USER_AGENT},
+    redirect::Policy,
+    Client, ClientBuilder,
+};
 use snafu::{whatever, FromString, OptionExt, ResultExt};
-use std::sync::Arc;
 use tracing::debug;
 use url::Url;
+
+use crate::{
+    bot::UploadNotifier,
+    downloader::{Downloader, VideoDownloadResult},
+    whatever::Whatever,
+};
 
 static URL_PATTERNS: [Lazy<Regex>; 2] = [
     Lazy::new(|| {

@@ -1,20 +1,24 @@
 // 1. Run `cargo add opentelemetry opentelemetry-otlp tracing-opentelemetry tracing-subscriber --features=opentelemetry/rt-tokio,tracing-subscriber/env-filter`
 // 2. add `init_tracing::init_tracing().whatever_context("Setting up the opentelemetry exporter")?;` to main.rs
 
-use crate::whatever::Whatever;
-use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
-use opentelemetry::trace::TraceError;
+use std::{panic::PanicInfo, time::Duration};
+
+use opentelemetry::{
+    propagation::{TextMapCompositePropagator, TextMapPropagator},
+    trace::TraceError,
+};
 use opentelemetry_otlp::HasExportConfig as _;
-use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
-use opentelemetry_sdk::resource::{EnvResourceDetector, SdkProvidedResourceDetector};
-use opentelemetry_sdk::{trace as sdktrace, Resource};
+use opentelemetry_sdk::{
+    propagation::{BaggagePropagator, TraceContextPropagator},
+    resource::{EnvResourceDetector, SdkProvidedResourceDetector},
+    trace as sdktrace, Resource,
+};
 use snafu::ResultExt;
-use std::panic::PanicInfo;
-use std::time::Duration;
-use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry::Registry;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{
+    fmt::format::FmtSpan, layer::SubscriberExt, registry::Registry, util::SubscriberInitExt,
+};
+
+use crate::whatever::Whatever;
 
 fn panic_hook(panic_info: &PanicInfo) {
     let backtrace = std::backtrace::Backtrace::force_capture();

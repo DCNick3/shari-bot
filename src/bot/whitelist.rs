@@ -1,10 +1,11 @@
-use crate::whatever::Whatever;
+use std::{collections::HashMap, io, path::PathBuf};
+
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::{collections::HashMap, io, path::PathBuf};
 use tokio::fs::read_to_string;
 
 use super::UserId;
+use crate::whatever::Whatever;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Clone, Hash)]
 pub struct UserInfo {

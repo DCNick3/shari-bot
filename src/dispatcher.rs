@@ -1,6 +1,8 @@
-use crate::downloader::Downloader;
 use std::sync::Arc;
+
 use url::Url;
+
+use crate::downloader::Downloader;
 
 pub struct DownloadDispatcher {
     downloaders: Vec<Arc<dyn Downloader>>,

@@ -1,8 +1,9 @@
-use crate::bot::UserId;
-use crate::whatever::Whatever;
+use std::collections::HashSet;
+
 use serde::Deserialize;
 use snafu::ResultExt;
-use std::collections::HashSet;
+
+use crate::{bot::UserId, whatever::Whatever};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {

@@ -1,8 +1,5 @@
-use crate::bot::lang::Lang;
-use crate::{
-    bot::{markdown, whitelist::UserInfo, UserId},
-    whatever::Whatever,
-};
+use std::sync::Arc;
+
 use grammers_client::{
     client::auth::InvocationError,
     types::{Chat, Message, User},
@@ -11,9 +8,13 @@ use grammers_client::{
 use grammers_session::PackedChat;
 use grammers_tl_types::types::MessageEntityBotCommand;
 use snafu::{OptionExt, ResultExt, Snafu};
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
+
+use crate::{
+    bot::{lang::Lang, markdown, whitelist::UserInfo, UserId},
+    whatever::Whatever,
+};
 
 #[derive(Debug)]
 struct Alias(String);

@@ -1,14 +1,16 @@
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use futures::{StreamExt, TryStreamExt};
+use snafu::ResultExt as _;
+use tokio::sync::Mutex;
+use tracing::{error, info};
+
 use crate::{
     bot::whitelist::Whitelist,
     dispatcher::DownloadDispatcher,
     downloader::{tiktok::TikTokDownloader, youtube::YoutubeDownloader},
     whatever::Whatever,
 };
-use futures::{StreamExt, TryStreamExt};
-use snafu::ResultExt as _;
-use std::{path::PathBuf, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
-use tracing::{error, info};
 
 mod bot;
 mod config;

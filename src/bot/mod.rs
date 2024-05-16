@@ -4,10 +4,8 @@ mod markdown;
 mod upload;
 pub mod whitelist;
 
-pub use self::upload::UploadNotifier;
-pub use self::upload::UploadStatus;
-use crate::bot::lang::Lang;
-use crate::{bot::commands::handle_command, dispatcher::DownloadDispatcher, whatever::Whatever};
+use std::{collections::HashSet, sync::Arc, time::Duration};
+
 use grammers_client::{
     button, reply_markup,
     types::{Chat, Message},
@@ -16,10 +14,16 @@ use grammers_client::{
 use grammers_tl_types::enums;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt as _, Snafu};
-use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
+
+pub use self::upload::{UploadNotifier, UploadStatus};
+use crate::{
+    bot::{commands::handle_command, lang::Lang},
+    dispatcher::DownloadDispatcher,
+    whatever::Whatever,
+};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Hash)]
 pub struct UserId(pub i64);

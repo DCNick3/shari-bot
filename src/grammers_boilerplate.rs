@@ -1,10 +1,12 @@
-use crate::whatever::Whatever;
+use std::path::Path;
+
 use grammers_client::{Client, Config, InitParams, SignInError};
 use grammers_session::Session;
 use indoc::indoc;
 use snafu::{whatever, ResultExt};
-use std::path::Path;
 use tracing::{debug, info, warn};
+
+use crate::whatever::Whatever;
 
 pub async fn connect_and_login(config: &crate::config::Telegram) -> Result<Client, Whatever> {
     let mut catch_up = false;

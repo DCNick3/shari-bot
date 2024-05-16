@@ -1,24 +1,29 @@
 pub mod tiktok;
 pub mod youtube;
 
-use crate::bot::{UploadNotifier, UploadStatus};
-use crate::whatever::Whatever;
-use crate::{StreamExt, TryStreamExt};
+use std::{
+    fmt::Debug,
+    io::ErrorKind,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
+
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::stream::BoxStream;
-use futures::Stream;
+use futures::{stream::BoxStream, Stream};
 use pin_project_lite::pin_project;
 use reqwest::Client;
 use snafu::{OptionExt, ResultExt};
-use std::fmt::Debug;
-use std::io::ErrorKind;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Duration;
 use tracing::{debug, warn};
 use url::Url;
+
+use crate::{
+    bot::{UploadNotifier, UploadStatus},
+    whatever::Whatever,
+    StreamExt, TryStreamExt,
+};
 
 pub struct VideoInformation {
     pub width: i32,

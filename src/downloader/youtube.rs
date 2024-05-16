@@ -1,12 +1,15 @@
-use crate::bot::UploadNotifier;
-use crate::downloader::{Downloader, VideoDownloadResult, VideoInformation};
-use crate::whatever::Whatever;
+use std::{sync::Arc, time::Duration};
+
 use async_trait::async_trait;
 use snafu::ResultExt;
-use std::sync::Arc;
-use std::time::Duration;
 use tracing::debug;
 use url::Url;
+
+use crate::{
+    bot::UploadNotifier,
+    downloader::{Downloader, VideoDownloadResult, VideoInformation},
+    whatever::Whatever,
+};
 
 #[derive(Debug)]
 pub struct YoutubeDownloader {}

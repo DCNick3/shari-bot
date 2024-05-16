@@ -1,20 +1,26 @@
-use crate::bot;
-use crate::bot::lang::Lang;
-use crate::bot::{markdown, UploadError};
-use crate::downloader::{BytesStream, Downloader, VideoDownloadResult};
-use crate::whatever::Whatever;
+use std::{sync::Arc, time::Duration};
+
 use futures::{FutureExt, TryStreamExt};
-use grammers_client::types::{Attribute, Message};
-use grammers_client::{Client, InputMessage};
+use grammers_client::{
+    types::{Attribute, Message},
+    Client, InputMessage,
+};
 use snafu::{FromString, ResultExt};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::select;
-use tokio::sync::watch::{Receiver, Sender};
-use tokio::time::timeout;
+use tokio::{
+    select,
+    sync::watch::{Receiver, Sender},
+    time::timeout,
+};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{debug, info_span, instrument, Instrument};
 use url::Url;
+
+use crate::{
+    bot,
+    bot::{lang::Lang, markdown, UploadError},
+    downloader::{BytesStream, Downloader, VideoDownloadResult},
+    whatever::Whatever,
+};
 
 #[derive(Clone)]
 pub enum UploadStatus {
