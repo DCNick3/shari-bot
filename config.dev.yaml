@@ -1,0 +1,2 @@
+data_storages:
+  whitelist_file: "whitelist.json"
