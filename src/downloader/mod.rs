@@ -1,7 +1,7 @@
 pub mod tiktok;
 pub mod youtube;
 
-use crate::bot::{Notifier, UploadStatus};
+use crate::bot::{UploadNotifier, UploadStatus};
 use crate::whatever::Whatever;
 use crate::{StreamExt, TryStreamExt};
 use async_trait::async_trait;
@@ -44,7 +44,7 @@ pub trait Downloader: Debug + Send + Sync {
     async fn download(
         self: Arc<Self>,
         url: Url,
-        notifier: Notifier,
+        notifier: UploadNotifier,
     ) -> Result<VideoDownloadResult, Whatever>;
 }
 
@@ -54,12 +54,12 @@ pin_project! {
         stream: T,
         size: Option<u64>,
         byte_counter: u64,
-        notifier: Notifier,
+        notifier: UploadNotifier,
     }
 }
 
 impl<T: Stream<Item = Result<Bytes, reqwest::Error>>> ProgressStream<T> {
-    pub fn new(stream: T, size: Option<u64>, notifier: Notifier) -> Self {
+    pub fn new(stream: T, size: Option<u64>, notifier: UploadNotifier) -> Self {
         Self {
             stream,
             size,
@@ -100,7 +100,7 @@ impl<T: Stream<Item = Result<Bytes, reqwest::Error>>> Stream for ProgressStream<
 async fn stream_url(
     client: &Client,
     url: Url,
-    notifier: Notifier,
+    notifier: UploadNotifier,
 ) -> Result<BytesStream, Whatever> {
     let resp = client
         .execute(

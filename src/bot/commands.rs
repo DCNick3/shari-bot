@@ -1,3 +1,4 @@
+use crate::bot::lang::Lang;
 use crate::{
     bot::{markdown, whitelist::UserInfo, UserId},
     whatever::Whatever,
@@ -9,7 +10,6 @@ use grammers_client::{
 };
 use grammers_session::PackedChat;
 use grammers_tl_types::types::MessageEntityBotCommand;
-use indoc::indoc;
 use snafu::{OptionExt, ResultExt, Snafu};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -52,15 +52,12 @@ enum CommandParseError {
     NoArgumentsProvided,
     #[allow(dead_code)]
     IncorrectArguments,
-    ParsingError {
-        inner: Whatever,
+    #[snafu(whatever, display("{message}"))]
+    InternalError {
+        message: String,
+        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
-}
-
-impl From<Whatever> for CommandParseError {
-    fn from(value: Whatever) -> Self {
-        Self::ParsingError { inner: value }
-    }
 }
 
 impl SuperuserCommand {
@@ -72,17 +69,17 @@ impl SuperuserCommand {
         let text = text.encode_utf16().collect::<Vec<_>>();
         let command_text =
             &text[command.offset as usize..(command.offset + command.length) as usize];
-        let command_text = String::from_utf16(command_text)
-            .whatever_context::<_, Whatever>("Parsing command from message")?;
+        let command_text =
+            String::from_utf16(command_text).whatever_context("Parsing command from message")?;
         let args = &text[(command.offset + command.length) as usize..];
         let args = String::from_utf16(args)
-            .whatever_context::<_, Whatever>("Parsing arguments for the command from message")?;
+            .whatever_context("Parsing arguments for the command from message")?;
         let mut args = args.split_whitespace();
         // expect??
         let command = command_text
             .split('@')
             .next()
-            .whatever_context::<_, Whatever>("Split produced no elements for some reason")?;
+            .whatever_context("Split produced no elements for some reason")?;
 
         match command {
             "/whitelist" | "/whitelist_get" => Ok(Self::WhitelistGet),
@@ -107,48 +104,29 @@ pub async fn handle_command(
     command: &MessageEntityBotCommand,
     message: &Message,
     whitelist: Arc<Mutex<crate::bot::whitelist::Whitelist>>,
-) -> Result<(), Whatever> {
+) -> Result<InputMessage, Whatever> {
     let command = match SuperuserCommand::parse(command, message) {
-        Ok(c) => c,
-        Err(CommandParseError::UnknownCommand) => {
-            message
-                .reply(InputMessage::text(
-                    "I don't know such command, /help might help",
-                ))
-                .await
-                .whatever_context("Sending reply")?;
-            return Ok(());
+        Ok(command) => command,
+        Err(e) => {
+            return Ok(match e {
+                CommandParseError::UnknownCommand => Lang::CommandUnknown,
+                CommandParseError::NoArgumentsProvided => Lang::CommandNeedsArgs,
+                CommandParseError::IncorrectArguments => Lang::CommandIncorrectArgs,
+                e => return Err::<InputMessage, _>(e).whatever_context("Parsing command"),
+            }
+            .into())
         }
-        Err(CommandParseError::NoArgumentsProvided) => {
-            message
-                .reply(InputMessage::text("Missing argument(-s), /help might help"))
-                .await
-                .whatever_context("Sending reply")?;
-            return Ok(());
-        }
-        Err(CommandParseError::IncorrectArguments) => {
-            message
-                .reply(InputMessage::text(
-                    "I expected other arguments, /help might help",
-                ))
-                .await
-                .whatever_context("Sending reply")?;
-            return Ok(());
-        }
-        Err(CommandParseError::ParsingError { inner: e }) => return Err(e),
     };
 
-    match command {
+    let reply = match command {
         SuperuserCommand::WhitelistInsert(alias) => {
-            let Some(user) = alias.resolve(client).await? else {
+            let Some(user) = alias
+                .resolve(client)
+                .await
+                .whatever_context("Resolving the user alias")?
+            else {
                 info!("Got username, but couldn't resolve: {}", alias.0);
-                message
-                    .reply(InputMessage::text(
-                        "All telegram doesn't know this person 🔍\nDid you type the name correctly?",
-                    ))
-                    .await
-                    .whatever_context("Sending reply")?;
-                return Ok(());
+                return Ok(Lang::WhitelistErrorAliasResolve.into());
             };
             info!(
                 "Adding into whitelist user (name: {:?}, id: {})",
@@ -158,14 +136,7 @@ pub async fn handle_command(
             let Some(access_hash) = grammers_session::PackedChat::from(user.clone()).access_hash
             else {
                 warn!("no access hash found for user id {:?}", user.id());
-                message
-                    .reply(InputMessage::text(format!(
-                        "Cannot access info of {:?}",
-                        user.username()
-                    )))
-                    .await
-                    .whatever_context("Sending reply")?;
-                return Ok(());
+                return Ok(Lang::WhitelistErrorNoAccessHash(user.id()).into());
             };
             let added = whitelist
                 .lock()
@@ -174,31 +145,19 @@ pub async fn handle_command(
                 .await
                 .whatever_context("Inserting user into whitelist")?;
             if added {
-                message
-                    .reply(InputMessage::text(
-                        "Added the user successfully! ✨ Now they can use this bot ✨",
-                    ))
-                    .await
-                    .whatever_context("Sending reply")?;
+                Lang::WhitelistAddOk
             } else {
-                message
-                    .reply(InputMessage::text(
-                        "✨ I already know this person! (or bot 🤔) ✨",
-                    ))
-                    .await
-                    .whatever_context("Sending reply")?;
+                Lang::WhitelistAddKnown
             }
         }
         SuperuserCommand::WhitelistRemove(alias) => {
-            let Some(user) = alias.resolve(client).await? else {
+            let Some(user) = alias
+                .resolve(client)
+                .await
+                .whatever_context("Resolving the user alias")?
+            else {
                 info!("Got username, but couldn't resolve: {}", alias.0);
-                message
-                    .reply(InputMessage::text(
-                        "All telegram doesn't know this person 🔍\nDid you type the name correctly?",
-                    ))
-                    .await
-                    .whatever_context("Sending reply")?;
-                return Ok(());
+                return Ok(Lang::WhitelistErrorAliasResolve.into());
             };
             info!(
                 "Removing from whitelist user (name: {:?}, id: {})",
@@ -212,17 +171,9 @@ pub async fn handle_command(
                 .await
                 .whatever_context("Removing user from whitelist")?;
             if removed.is_some() {
-                message
-                    .reply(InputMessage::text(
-                        "Removed the user successfully.. We're not friends anymore 😭😭😭 ",
-                    ))
-                    .await
-                    .whatever_context("Sending reply")?;
+                Lang::WhitelistRemoveOk
             } else {
-                message
-                    .reply(InputMessage::text("Who's dat? Idk them, do you? 👊🤨 "))
-                    .await
-                    .whatever_context("Sending reply")?;
+                Lang::WhitelistRemoveUnknown
             }
         }
         SuperuserCommand::WhitelistGet => {
@@ -247,30 +198,13 @@ pub async fn handle_command(
                     None => markdown::user_mention(*user_id, "<cringe cuteness drowning femboy>"),
                 };
 
-                users_string.push_str(&format!(
-                    "beeestieee {} 😎 (the best one!!!)\n\\\n",
-                    user_tag
-                ));
+                users_string.push_str(&format!("{}\n\\\n", Lang::WhitelistListItem(user_tag)));
             }
-            let reply_md = format!("List of my absolute besties 👯‍🌸️😎:\\\n{users_string}\n",);
-            message
-                .reply(InputMessage::markdown(&reply_md))
-                .await
-                .whatever_context("Sending reply")?;
+            let reply_md = format!("{}:\\\n{}\n", Lang::WhitelistListHead, users_string);
+
+            return Ok(InputMessage::markdown(&reply_md));
         }
-        SuperuserCommand::Help => {
-            message
-                .reply(InputMessage::text(indoc!(
-                    r#"
-                /whitelist - show users in whitelist
-                /whitelist_add @username - add user to the whitelist 
-                /whitelist_remove @username - remove user from the whitelist 
-                /help - show this message
-                "#
-                )))
-                .await
-                .whatever_context("Sending reply")?;
-        }
-    }
-    Ok(())
+        SuperuserCommand::Help => Lang::CommandHelp,
+    };
+    Ok(reply.into())
 }

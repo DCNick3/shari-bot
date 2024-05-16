@@ -1,4 +1,4 @@
-use crate::bot::Notifier;
+use crate::bot::UploadNotifier;
 use crate::downloader::{Downloader, VideoDownloadResult, VideoInformation};
 use crate::whatever::Whatever;
 use async_trait::async_trait;
@@ -31,7 +31,7 @@ impl Downloader for YoutubeDownloader {
     async fn download(
         self: Arc<Self>,
         url: Url,
-        notifier: Notifier,
+        notifier: UploadNotifier,
     ) -> Result<VideoDownloadResult, Whatever> {
         debug!("Starting download!");
 

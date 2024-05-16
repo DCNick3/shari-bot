@@ -48,7 +48,9 @@ snafu = { version = "0.7.5", features = ["futures"] }
 opentelemetry = { version = "0.20.0", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.13.0"
 tracing-opentelemetry = "0.21.0"
+
 indoc = "2.0.4"
+displaydoc = "0.2.4"
 
 [profile.ship]
 inherits = "release"

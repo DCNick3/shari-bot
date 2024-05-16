@@ -1,4 +1,4 @@
-use crate::bot::Notifier;
+use crate::bot::UploadNotifier;
 use crate::downloader::{Downloader, VideoDownloadResult};
 use crate::whatever::Whatever;
 use async_trait::async_trait;
@@ -165,7 +165,7 @@ impl Downloader for TikTokDownloader {
     async fn download(
         self: Arc<Self>,
         url: Url,
-        notifier: Notifier,
+        notifier: UploadNotifier,
     ) -> Result<VideoDownloadResult, Whatever> {
         let video_link = ttdownloader_get_video_link(&self.client, &url).await?;
         let video_stream = super::stream_url(&self.client, video_link, notifier).await?;
