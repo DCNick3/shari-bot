@@ -221,7 +221,7 @@ fn reply(message: impl Into<InputMessage>) -> Result<MessageResult, Whatever> {
     Ok(MessageResult::Reply(message.into()))
 }
 
-#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()), err(Debug))]
+#[instrument(skip_all, fields(chat_id = message.chat().id(), username = message.chat().username()))]
 async fn handle_message_impl(
     message: &Message,
     client: Client,
@@ -358,11 +358,14 @@ async fn handle_message(
         }
         Ok(MessageResult::Ignore) => {}
         Err(e) => {
+            let report = snafu::Report::from_error(e).to_string();
+            error!("Error while handing a message: {}", report);
+
             // TODO: make the error a code block
             // the markdown parser seems a bit buggy, so can't really use it here.
             // TODO: and now that a Lang is here, it's even less clear as to how
             message
-                .reply(Lang::ResultGenericError(e))
+                .reply(Lang::ResultGenericError(report))
                 .await
                 .whatever_context("Sending the error message to the user")?;
         }

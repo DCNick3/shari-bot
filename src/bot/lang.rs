@@ -23,8 +23,8 @@ pub enum Lang {
     /**
     ewwow(((99  .･ﾟﾟ･(／ω＼)･ﾟﾟ･.
 
-    {0:?}*/
-    ResultGenericError(crate::Whatever),
+    {0}*/
+    ResultGenericError(String),
 
     /// I donbt understan tis command ☆⌒(> _ <) \[/help might help\]
     CommandUnknown,

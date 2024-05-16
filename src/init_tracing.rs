@@ -2,14 +2,12 @@
 // 2. add `init_tracing::init_tracing().whatever_context("Setting up the opentelemetry exporter")?;` to main.rs
 
 use crate::whatever::Whatever;
-use opentelemetry::propagation::TextMapPropagator;
-use opentelemetry::sdk::propagation::{
-    BaggagePropagator, TextMapCompositePropagator, TraceContextPropagator,
-};
-use opentelemetry::sdk::resource::{EnvResourceDetector, SdkProvidedResourceDetector};
-use opentelemetry::sdk::{trace as sdktrace, Resource};
+use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::TraceError;
-use opentelemetry_otlp::{HasExportConfig, WithExportConfig};
+use opentelemetry_otlp::HasExportConfig as _;
+use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
+use opentelemetry_sdk::resource::{EnvResourceDetector, SdkProvidedResourceDetector};
+use opentelemetry_sdk::{trace as sdktrace, Resource};
 use snafu::ResultExt;
 use std::panic::PanicInfo;
 use std::time::Duration;
@@ -98,7 +96,7 @@ fn propagator_from_string(
 }
 
 fn init_tracer() -> Result<sdktrace::Tracer, Whatever> {
-    let mut exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
+    let mut exporter = opentelemetry_otlp::new_exporter().tonic();
 
     println!(
         "Using opentelemetry endpoint {}",
@@ -122,7 +120,7 @@ fn init_tracer() -> Result<sdktrace::Tracer, Whatever> {
         .tracing()
         .with_exporter(exporter)
         .with_trace_config(sdktrace::config().with_resource(resource))
-        .install_batch(opentelemetry::runtime::Tokio)
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
         .whatever_context("Setting up the opentelemetry tracer")
 }
 
