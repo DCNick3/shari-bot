@@ -27,6 +27,8 @@ spec:
             - mountPath: /data
               name: shari-bot-data
           env:
+            - name: CONFIG_TELEGRAM__SESSION_STORAGE
+              value: "/data/tgbot.session"
             - name: CONFIG_TELEGRAM__ACCOUNT__TYPE
               value: Bot
             - name: CONFIG_TELEGRAM__ACCOUNT__TOKEN
