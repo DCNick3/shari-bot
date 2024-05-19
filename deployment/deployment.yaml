@@ -29,6 +29,8 @@ spec:
           env:
             - name: CONFIG_TELEGRAM__SESSION_STORAGE
               value: "/data/tgbot.session"
+            - name: CONFIG_DATA_STORAGES__WHITELIST_FILE
+              value: "/data/whitelist.json"
             - name: CONFIG_TELEGRAM__ACCOUNT__TYPE
               value: Bot
             - name: CONFIG_TELEGRAM__ACCOUNT__TOKEN
