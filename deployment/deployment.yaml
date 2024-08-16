@@ -22,7 +22,7 @@ spec:
             claimName: shari-bot-pvc
       containers:
         - name: shari-bot
-          image: ghcr.io/dcnick3/shari-bot:ref-725d853431eadef1f4fab9cabe3fa9c62c0b46bf
+          image: ghcr.io/dcnick3/shari-bot:ref-1e7ee2e14a2efe7d4d7c822a898ea89cc0229879
           volumeMounts:
             - mountPath: /data
               name: shari-bot-data
